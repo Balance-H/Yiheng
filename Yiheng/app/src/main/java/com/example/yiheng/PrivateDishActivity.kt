@@ -7,6 +7,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.PickVisualMediaRequest
@@ -71,6 +72,7 @@ data class OrderItem(
     val dishId: Long,
     val dishName: String,
     val dishImage: String?,
+    val price: Double,
     val oilLevel: OilLevel,
     val dietaries: List<DietaryRestriction>,
     val spicy: SpicyLevel,
@@ -86,6 +88,11 @@ data class Order(
     var rating: Int = 0,
     var isCompleted: Boolean = false
 )
+
+private fun parsePrice(value: String): Double {
+    val cleaned = value.replace(Regex("[^0-9.]"), "")
+    return cleaned.toDoubleOrNull() ?: 0.0
+}
 
 // --- 持久化 (已升级版本以防旧数据冲突) ---
 object DishStore {
@@ -131,6 +138,7 @@ object DishStore {
             r.items.forEach { itm ->
                 items.put(JSONObject().apply {
                     put("id", itm.dishId); put("name", itm.dishName); put("img", itm.dishImage ?: "")
+                    put("price", itm.price)
                     put("oil", itm.oilLevel.name); put("spicy", itm.spicy.name)
                     put("diet", JSONArray(itm.dietaries.map { it.name }))
                     put("steps", JSONArray(itm.steps))
@@ -159,6 +167,7 @@ object DishStore {
                     val sArr = io.getJSONArray("steps")
                     OrderItem(
                         io.getLong("id"), io.getString("name"), io.optString("img", "").takeIf { it.isNotEmpty() },
+                        io.optDouble("price", 0.0),
                         OilLevel.valueOf(io.getString("oil")),
                         List(dArr.length()) { DietaryRestriction.valueOf(dArr.getString(it)) },
                         SpicyLevel.valueOf(io.getString("spicy")),
@@ -250,6 +259,17 @@ fun PrivateDishApp() {
     var selectedCat by remember { mutableStateOf(categoryList.firstOrNull() ?: "") }
     var searchQuery by remember { mutableStateOf("") }
     var specDish by remember { mutableStateOf<Dish?>(null) }
+    val currentOrderId = viewingOrder?.id
+
+    BackHandler(enabled = viewingOrder != null || isHistoryView || isManagingCats || isAdding || editingDish != null || viewingDish != null) {
+        when {
+            viewingOrder != null -> viewingOrder = null
+            isHistoryView -> isHistoryView = false
+            isManagingCats -> isManagingCats = false
+            isAdding || editingDish != null -> { isAdding = false; editingDish = null }
+            viewingDish != null -> viewingDish = null
+        }
+    }
 
     LaunchedEffect(dishList) { DishStore.saveDishes(context, dishList) }
     LaunchedEffect(categoryList) { DishStore.saveCats(context, categoryList) }
@@ -284,13 +304,19 @@ fun PrivateDishApp() {
         ) { state ->
             when (state) {
                 0 -> OrderDetailScreen(viewingOrder!!, { viewingOrder = null }, { img, txt, rate ->
-                    orderHistory = orderHistory.map { if (it.id == viewingOrder!!.id) it.copy(reviewImages = img, reviewText = txt, rating = rate, isCompleted = true) else it }
+                    currentOrderId?.let { orderId ->
+                        orderHistory = orderHistory.map { if (it.id == orderId) it.copy(reviewImages = img, reviewText = txt, rating = rate, isCompleted = true) else it }
+                    }
                     viewingOrder = null
-                }, { orderHistory = orderHistory.filter { it.id != viewingOrder!!.id }; viewingOrder = null })
+                }, {
+                    currentOrderId?.let { orderId -> orderHistory = orderHistory.filter { it.id != orderId } }
+                    viewingOrder = null
+                })
                 1 -> HistoryScreen(orderHistory, { isHistoryView = false }, { viewingOrder = it }, { orderToDelete -> orderHistory = orderHistory.filter { it.id != orderToDelete.id } })
                 2 -> CategoryScreen(categoryList, { isManagingCats = false }, { newCats -> categoryList = newCats })
-                3 -> AddDishScreen(editingDish, categoryList, { isAdding = false; editingDish = null }, {
-                    dishList = if (editingDish != null) dishList.map { d -> if (d.id == editingDish!!.id) it else d } else dishList + it
+                3 -> AddDishScreen(editingDish, categoryList, { isAdding = false; editingDish = null }, { savedDish ->
+                    val editingId = editingDish?.id
+                    dishList = if (editingId != null) dishList.map { d -> if (d.id == editingId) savedDish else d } else dishList + savedDish
                     isAdding = false; editingDish = null
                 })
                 4 -> DishDetailScreen(viewingDish!!, { viewingDish = null }, { editingDish = it; viewingDish = null }, { dishList = dishList.filter { d -> d.id != viewingDish!!.id }; viewingDish = null })
@@ -495,6 +521,7 @@ fun CartBar(items: List<OrderItem>, onOrder: () -> Unit, onRemove: (OrderItem) -
             Color(0xFF8E54E9).copy(alpha = 0.7f)
         )
     )
+    val totalPrice = items.sumOf { it.price }
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         if (expanded && items.isNotEmpty()) {
@@ -531,11 +558,23 @@ fun CartBar(items: List<OrderItem>, onOrder: () -> Unit, onRemove: (OrderItem) -
                                 Spacer(Modifier.width(12.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text(itm.dishName, fontWeight = FontWeight.Bold)
-                                    Text("${itm.oilLevel.label} · ${itm.spicy.label}", fontSize = 11.sp, color = Color.Gray)
+                                    Text(
+                                        "${itm.oilLevel.label} · ${itm.spicy.label}",
+                                        fontSize = 11.sp,
+                                        color = Color.White.copy(alpha = 0.85f)
+                                    )
                                 }
                                 IconButton(onClick = { onRemove(itm) }) { Icon(Icons.Default.RemoveCircle, null, tint = Color.Red.copy(alpha = 0.6f)) }
                             }
                         }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("今日合计", fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.85f))
+                        Text(String.format("¥%.2f", totalPrice), fontWeight = FontWeight.Black, color = Color(0xFFFFC857), fontSize = 18.sp)
                     }
                     Button(onClick = onOrder, modifier = Modifier.fillMaxWidth().height(54.dp).padding(top = 12.dp), shape = RoundedCornerShape(16.dp)) {
                         Text("确认并下单", fontWeight = FontWeight.Bold, fontSize = 16.sp)
@@ -801,6 +840,7 @@ fun ReviewDialog(
     onDismiss: () -> Unit,
     onConfirm: (List<String>, String?, Int) -> Unit
 ) {
+    val context = LocalContext.current
     var images by remember { mutableStateOf(reviewImages) }
     var text by remember { mutableStateOf(reviewText ?: "") }
     var currentRating by remember { mutableIntStateOf(rating) }
@@ -808,6 +848,8 @@ fun ReviewDialog(
     // 修复闪退：使用 PickMultipleVisualMedia 处理图片选择
     val multiPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { uris ->
         if (uris.isNotEmpty()) {
+            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+            uris.forEach { uri -> runCatching { context.contentResolver.takePersistableUriPermission(uri, flags) } }
             images = images + uris.map { it.toString() }
         }
     }
@@ -949,7 +991,10 @@ fun SpecDialog(dish: Dish, onDismiss: () -> Unit, onConfirm: (OrderItem) -> Unit
             }
         },
         confirmButton = {
-            Button(onClick = { onConfirm(OrderItem(dish.id, dish.name, dish.imageUri, oil, dietaries.toList(), spicy, dish.steps)) }, shape = RoundedCornerShape(16.dp)) { Text("确认选择") }
+            Button(
+                onClick = { onConfirm(OrderItem(dish.id, dish.name, dish.imageUri, parsePrice(dish.price), oil, dietaries.toList(), spicy, dish.steps)) },
+                shape = RoundedCornerShape(16.dp)
+            ) { Text("确认选择") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("取消") }
