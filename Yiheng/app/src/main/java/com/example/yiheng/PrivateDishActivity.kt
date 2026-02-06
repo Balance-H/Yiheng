@@ -33,6 +33,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -214,8 +215,8 @@ fun PrivateDishApp() {
         label = "shift"
     )
     val glowA by infiniteTransition.animateColor(
-        initialValue = Color(0xFFB7A7FF),
-        targetValue = Color(0xFFF7A6D8),
+        initialValue = Color(0xFF6A5BFF),
+        targetValue = Color(0xFFFF4FD8),
         animationSpec = infiniteRepeatable(
             animation = tween(9000, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
@@ -223,8 +224,8 @@ fun PrivateDishApp() {
         label = "glowA"
     )
     val glowB by infiniteTransition.animateColor(
-        initialValue = Color(0xFFA6D9FF),
-        targetValue = Color(0xFFFCE1A3),
+        initialValue = Color(0xFF25D0FF),
+        targetValue = Color(0xFFFFC857),
         animationSpec = infiniteRepeatable(
             animation = tween(11000, easing = LinearOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
@@ -232,8 +233,8 @@ fun PrivateDishApp() {
         label = "glowB"
     )
     val glowC by infiniteTransition.animateColor(
-        initialValue = Color(0xFFC9F7C9),
-        targetValue = Color(0xFFBCEBFF),
+        initialValue = Color(0xFF8BFF6A),
+        targetValue = Color(0xFF6AF7FF),
         animationSpec = infiniteRepeatable(
             animation = tween(10000, easing = FastOutLinearInEasing),
             repeatMode = RepeatMode.Reverse
@@ -422,9 +423,9 @@ fun MainScreen(
 fun DishCard(dish: Dish, onClick: (Dish) -> Unit, onSpec: (Dish) -> Unit) {
     val cardGlow = Brush.linearGradient(
         listOf(
-            Color(0x33F7A6D8),
-            Color(0x33A6D9FF),
-            Color(0x33C9F7C9)
+            Color(0x66FF4FD8),
+            Color(0x6636D1FF),
+            Color(0x668BFF6A)
         )
     )
     Card(
@@ -468,7 +469,7 @@ fun DishCard(dish: Dish, onClick: (Dish) -> Unit, onSpec: (Dish) -> Unit) {
                     "¥${dish.price}",
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Black,
-                    color = Color(0xFFE9C675)
+                    color = Color(0xFFFFC857)
                 )
             }
             Button(
@@ -725,7 +726,7 @@ fun HistoryScreen(orders: List<Order>, onBack: () -> Unit, onOrderClick: (Order)
                                 Row(Modifier.padding(top = 12.dp)) { repeat(5) { i -> Icon(Icons.Default.Star, null, tint = if(i < o.rating) Color(0xFFFFC107) else Color.LightGray, modifier = Modifier.size(20.dp)) } }
                             }
                         }
-                        // 删除按钮位置微调
+                        // 删除按钮 position微调
                         IconButton(onClick = { onDeleteOrder(o) }, modifier = Modifier.align(Alignment.TopEnd).padding(4.dp)) { 
                             Icon(Icons.Default.Delete, null, tint = Color.Red.copy(alpha = 0.4f), modifier = Modifier.size(22.dp)) 
                         }
