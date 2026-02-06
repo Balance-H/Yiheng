@@ -1,4 +1,4 @@
-@file:OptIn(ExperimentalMaterial3Api::class)
+@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
 
 package com.example.yiheng
 
@@ -295,13 +295,11 @@ fun PrivateDishApp() {
     var searchQuery by remember { mutableStateOf("") }
     var specDish by remember { mutableStateOf<Dish?>(null) }
     val currentOrderId = viewingOrder?.id
-    var addAnimUri by remember { mutableStateOf<String?>(null) }
-    val addAnimProgress = remember { Animatable(0f) }
 
-    BackHandler(enabled = viewingOrder != null || currentTab != AppTab.HOME || isManagingCats || isAdding || editingDish != null || viewingDish != null) {
+    BackHandler(enabled = viewingOrder != null || isHistoryView || isManagingCats || isAdding || editingDish != null || viewingDish != null) {
         when {
             viewingOrder != null -> viewingOrder = null
-            currentTab != AppTab.HOME -> currentTab = AppTab.HOME
+            isHistoryView -> isHistoryView = false
             isManagingCats -> isManagingCats = false
             isAdding || editingDish != null -> { isAdding = false; editingDish = null }
             viewingDish != null -> viewingDish = null
@@ -350,15 +348,16 @@ fun PrivateDishApp() {
             when (state) {
                 0 -> OrderDetailScreen(viewingOrder!!, { viewingOrder = null }, { img, txt, rate ->
                     currentOrderId?.let { orderId ->
-                        orderHistory = orderHistory.map { if (it.id == orderId) it.copy(reviewImages = img.filter { it.isNotBlank() }, reviewText = txt, rating = rate, isCompleted = true) else it }
+                        orderHistory = orderHistory.map { if (it.id == orderId) it.copy(reviewImages = img, reviewText = txt, rating = rate, isCompleted = true) else it }
                     }
                     viewingOrder = null
                 }, {
                     currentOrderId?.let { orderId -> orderHistory = orderHistory.filter { it.id != orderId } }
                     viewingOrder = null
                 })
-                1 -> CategoryScreen(categoryList, { isManagingCats = false }, { newCats -> categoryList = newCats })
-                2 -> AddDishScreen(editingDish, categoryList, { isAdding = false; editingDish = null }, { savedDish ->
+                1 -> HistoryScreen(orderHistory, { isHistoryView = false }, { viewingOrder = it }, { orderToDelete -> orderHistory = orderHistory.filter { it.id != orderToDelete.id } })
+                2 -> CategoryScreen(categoryList, { isManagingCats = false }, { newCats -> categoryList = newCats })
+                3 -> AddDishScreen(editingDish, categoryList, { isAdding = false; editingDish = null }, { savedDish ->
                     val editingId = editingDish?.id
                     dishList = if (editingId != null) dishList.map { d -> if (d.id == editingId) savedDish else d } else dishList + savedDish
                     isAdding = false; editingDish = null
@@ -481,6 +480,49 @@ fun PrivateDishApp() {
                 }
             }
         }
+
+        if (addAnimUri != null) {
+            val configuration = LocalConfiguration.current
+            val density = LocalDensity.current
+            val widthPx = with(density) { configuration.screenWidthDp.dp.toPx() }
+            val heightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
+            val progress = addAnimProgress.value
+            LaunchedEffect(addAnimUri) {
+                addAnimProgress.snapTo(0f)
+                addAnimProgress.animateTo(1f, tween(700, easing = FastOutSlowInEasing))
+                addAnimUri = null
+            }
+            val startX = widthPx * 0.55f
+            val startY = heightPx * 0.45f
+            val endX = widthPx * 0.78f
+            val endY = heightPx * 0.88f
+            val x = startX + (endX - startX) * progress
+            val baseY = startY + (endY - startY) * progress
+            val arc = -heightPx * 0.18f * (4f * progress * (1f - progress))
+            val y = baseY + arc
+
+            Box(
+                modifier = Modifier
+                    .offset { IntOffset(x.roundToInt(), y.roundToInt()) }
+                    .size(46.dp)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.85f))
+                    .border(2.dp, Color(0xFFFFC857), CircleShape)
+                    .shadow(8.dp, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                if (addAnimUri != null) {
+                    Image(
+                        painter = rememberAsyncImagePainter(addAnimUri),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize().clip(CircleShape),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Icon(Icons.Default.AddShoppingCart, null, tint = Color(0xFFFF4FD8))
+                }
+            }
+        }
     }
 }
 
@@ -490,15 +532,14 @@ fun MainScreen(
     cats: List<String>,
     selected: String,
     query: String,
-    frequentPairs: List<Pair<Dish, Dish>>,
-    favoriteIds: Set<Long>,
-    onToggleFavorite: (Long) -> Unit,
     onCat: (String) -> Unit,
     onSearch: (String) -> Unit,
     onAdd: () -> Unit,
     onManage: () -> Unit,
     onDish: (Dish) -> Unit,
-    onSpec: (Dish) -> Unit
+    onSpec: (Dish) -> Unit,
+    sharedTransitionScope: SharedTransitionScope,
+    animatedVisibilityScope: AnimatedVisibilityScope
 ) {
     val filtered = dishes.filter { (it.category == selected || selected.isEmpty()) && it.name.contains(query, true) }
     var searchVisible by remember { mutableStateOf(false) }
@@ -597,23 +638,14 @@ fun MainScreen(
                 }
                 IconButton(onClick = onManage, modifier = Modifier.align(Alignment.CenterHorizontally).padding(vertical = 16.dp)) { Icon(Icons.Default.Settings, null, tint = Color.LightGray) }
             }
-            LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                contentPadding = PaddingValues(bottom = 200.dp)
-            ) {
-                if (frequentPairs.isNotEmpty()) {
-                    item {
-                        FrequentPairSection(frequentPairs, onDish, onSpec)
-                    }
-                }
+            LazyColumn(modifier = Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(16.dp), contentPadding = PaddingValues(bottom = 120.dp)) {
                 if (isLoading) {
                     items(4) {
                         DishSkeletonCard(skeletonAlpha)
                     }
                 } else {
                     items(filtered) { d ->
-                        DishCard(d, onDish, onSpec, favoriteIds.contains(d.id), onToggleFavorite)
+                        DishCard(d, onDish, onSpec, sharedTransitionScope, animatedVisibilityScope)
                     }
                 }
             }
@@ -671,53 +703,12 @@ fun DishSkeletonCard(alpha: Float) {
 }
 
 @Composable
-fun FrequentPairSection(
-    pairs: List<Pair<Dish, Dish>>,
-    onDish: (Dish) -> Unit,
-    onSpec: (Dish) -> Unit
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("常一起点的菜品", fontWeight = FontWeight.Black, fontSize = 18.sp, color = Color.White)
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            items(pairs) { pair ->
-                Card(
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))
-                ) {
-                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Image(
-                                painter = rememberAsyncImagePainter(pair.first.imageUris.firstOrNull() ?: Icons.Default.RestaurantMenu),
-                                contentDescription = null,
-                                modifier = Modifier.size(54.dp).clip(RoundedCornerShape(12.dp)),
-                                contentScale = ContentScale.Crop
-                            )
-                            Image(
-                                painter = rememberAsyncImagePainter(pair.second.imageUris.firstOrNull() ?: Icons.Default.RestaurantMenu),
-                                contentDescription = null,
-                                modifier = Modifier.size(54.dp).clip(RoundedCornerShape(12.dp)),
-                                contentScale = ContentScale.Crop
-                            )
-                        }
-                        Text("${pair.first.name} + ${pair.second.name}", fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            TextButton(onClick = { onDish(pair.first) }) { Text("看${pair.first.name}") }
-                            TextButton(onClick = { onSpec(pair.second) }) { Text("点${pair.second.name}") }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
 fun DishCard(
     dish: Dish,
     onClick: (Dish) -> Unit,
     onSpec: (Dish) -> Unit,
-    isFavorite: Boolean,
-    onToggleFavorite: (Long) -> Unit
+    sharedTransitionScope: SharedTransitionScope,
+    animatedVisibilityScope: AnimatedVisibilityScope
 ) {
     val cardGlow = Brush.linearGradient(
         listOf(
@@ -740,10 +731,16 @@ fun DishCard(
                 .padding(1.dp)
         ) {
             Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                val sharedState = rememberSharedContentState(key = "dish-${dish.id}")
                 Image(
                     painter = rememberAsyncImagePainter(dish.imageUris.firstOrNull() ?: Icons.Default.RestaurantMenu),
                     contentDescription = null,
-                    modifier = Modifier.size(95.dp).clip(RoundedCornerShape(20.dp)),
+                    modifier = with(sharedTransitionScope) {
+                        Modifier
+                            .sharedElement(sharedState, animatedVisibilityScope = animatedVisibilityScope)
+                            .size(95.dp)
+                            .clip(RoundedCornerShape(20.dp))
+                    },
                     contentScale = ContentScale.Crop
                 )
                 Spacer(Modifier.width(16.dp))
@@ -1365,7 +1362,7 @@ fun SpecDialog(dish: Dish, onDismiss: () -> Unit, onConfirm: (OrderItem) -> Unit
         },
         confirmButton = {
             Button(
-                onClick = { onConfirm(OrderItem(dish.id, dish.name, dish.imageUris.firstOrNull(), parsePrice(dish.price), oil, dietaries.toList(), spicy, dish.steps)) },
+                onClick = { onConfirm(OrderItem(dish.id, dish.name, dish.imageUri, parsePrice(dish.price), oil, dietaries.toList(), spicy, dish.steps)) },
                 shape = RoundedCornerShape(16.dp)
             ) { Text("确认选择") }
         },
@@ -1382,8 +1379,8 @@ fun DishDetailScreen(
     onBack: () -> Unit,
     onEdit: (Dish) -> Unit,
     onDelete: () -> Unit,
-    isFavorite: Boolean,
-    onToggleFavorite: (Long) -> Unit
+    sharedTransitionScope: SharedTransitionScope,
+    animatedVisibilityScope: AnimatedVisibilityScope
 ) {
     val carouselImages = remember(dish.imageUris) { dish.imageUris.filter { it.isNotBlank() } }
     val carouselState = rememberLazyListState()
@@ -1397,6 +1394,8 @@ fun DishDetailScreen(
             }
         }
     }
+
+    val sharedState = rememberSharedContentState(key = "dish-${dish.id}")
 
     Scaffold(
         topBar = {
@@ -1423,7 +1422,12 @@ fun DishDetailScreen(
                     Image(
                         painter = rememberAsyncImagePainter(Icons.Default.RestaurantMenu),
                         contentDescription = null,
-                        modifier = Modifier.fillMaxWidth().height(300.dp),
+                        modifier = with(sharedTransitionScope) {
+                            Modifier
+                                .sharedElement(sharedState, animatedVisibilityScope = animatedVisibilityScope)
+                                .fillMaxWidth()
+                                .height(300.dp)
+                        },
                         contentScale = ContentScale.Crop
                     )
                 } else {
@@ -1436,10 +1440,20 @@ fun DishDetailScreen(
                         userScrollEnabled = carouselImages.size > 1
                     ) {
                         items(carouselImages) { uri ->
+                            val modifier = if (uri == carouselImages.first()) {
+                                with(sharedTransitionScope) {
+                                    Modifier
+                                        .sharedElement(sharedState, animatedVisibilityScope = animatedVisibilityScope)
+                                        .fillParentMaxWidth()
+                                        .height(300.dp)
+                                }
+                            } else {
+                                Modifier.fillParentMaxWidth().height(300.dp)
+                            }
                             Image(
                                 painter = rememberAsyncImagePainter(uri),
                                 contentDescription = null,
-                                modifier = Modifier.fillParentMaxWidth().height(300.dp),
+                                modifier = modifier,
                                 contentScale = ContentScale.Crop
                             )
                         }
