@@ -7,6 +7,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.PickVisualMediaRequest
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -31,15 +33,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.rememberAsyncImagePainter
@@ -48,13 +54,15 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 
 // --- 数据模型 ---
 
 data class Dish(
     val id: Long = System.currentTimeMillis(),
     val name: String,
-    val imageUri: String?,
+    val imageUris: List<String> = emptyList(),
     val price: String,
     val firstMakeDate: String,
     val remark: String,
@@ -67,10 +75,13 @@ enum class OilLevel(val label: String) { NORMAL("正常"), LESS("少油"), BOILE
 enum class DietaryRestriction(val label: String) { NONE("无"), NO_ONION("去葱"), NO_GARLIC("去蒜"), NO_GINGER("去姜") }
 enum class SpicyLevel(val label: String) { MILD("微辣"), MEDIUM("中辣"), EXTRA("麻辣") }
 
+enum class AppTab { HOME, ORDERS, PROFILE }
+
 data class OrderItem(
     val dishId: Long,
     val dishName: String,
     val dishImage: String?,
+    val price: Double,
     val oilLevel: OilLevel,
     val dietaries: List<DietaryRestriction>,
     val spicy: SpicyLevel,
@@ -87,18 +98,25 @@ data class Order(
     var isCompleted: Boolean = false
 )
 
+private fun parsePrice(value: String): Double {
+    val cleaned = value.replace(Regex("[^0-9.]"), "")
+    return cleaned.toDoubleOrNull() ?: 0.0
+}
+
 // --- 持久化 (已升级版本以防旧数据冲突) ---
 object DishStore {
     private const val PREF_NAME = "PrivateDishesV4"
     private const val KEY_DISHES = "dishes"
     private const val KEY_CATEGORIES = "categories"
     private const val KEY_ORDERS = "orders"
+    private const val KEY_FAVORITES = "favorites"
 
     fun saveDishes(context: Context, dishes: List<Dish>) {
         val json = JSONArray()
         dishes.forEach { d ->
             json.put(JSONObject().apply {
-                put("id", d.id); put("name", d.name); put("imageUri", d.imageUri ?: "")
+                put("id", d.id); put("name", d.name)
+                put("imageUris", JSONArray(d.imageUris))
                 put("price", d.price); put("date", d.firstMakeDate); put("remark", d.remark)
                 put("steps", JSONArray(d.steps)); put("category", d.category); put("ingredients", d.mainIngredients ?: "")
             })
@@ -114,8 +132,17 @@ object DishStore {
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
                 val steps = o.getJSONArray("steps")
+                val imageUris = when {
+                    o.has("imageUris") -> {
+                        val imgs = o.getJSONArray("imageUris")
+                        List(imgs.length()) { imgs.getString(it) }.filter { it.isNotBlank() }
+                    }
+                    else -> {
+                        o.optString("imageUri", "").takeIf { it.isNotBlank() }?.let { listOf(it) } ?: emptyList()
+                    }
+                }
                 list.add(Dish(
-                    o.getLong("id"), o.getString("name"), o.optString("imageUri", "").takeIf { it.isNotEmpty() },
+                    o.getLong("id"), o.getString("name"), imageUris,
                     o.getString("price"), o.getString("date"), o.getString("remark"),
                     List(steps.length()) { steps.getString(it) }, o.getString("category"), o.optString("ingredients", "")
                 ))
@@ -131,6 +158,7 @@ object DishStore {
             r.items.forEach { itm ->
                 items.put(JSONObject().apply {
                     put("id", itm.dishId); put("name", itm.dishName); put("img", itm.dishImage ?: "")
+                    put("price", itm.price)
                     put("oil", itm.oilLevel.name); put("spicy", itm.spicy.name)
                     put("diet", JSONArray(itm.dietaries.map { it.name }))
                     put("steps", JSONArray(itm.steps))
@@ -159,6 +187,7 @@ object DishStore {
                     val sArr = io.getJSONArray("steps")
                     OrderItem(
                         io.getLong("id"), io.getString("name"), io.optString("img", "").takeIf { it.isNotEmpty() },
+                        io.optDouble("price", 0.0),
                         OilLevel.valueOf(io.getString("oil")),
                         List(dArr.length()) { DietaryRestriction.valueOf(dArr.getString(it)) },
                         SpicyLevel.valueOf(io.getString("spicy")),
@@ -185,6 +214,20 @@ object DishStore {
         val arr = JSONArray(s)
         return List(arr.length()) { arr.getString(it) }
     }
+
+    fun saveFavorites(context: Context, favorites: Set<Long>) {
+        context.getSharedPreferences(PREF_NAME, 0).edit()
+            .putString(KEY_FAVORITES, JSONArray(favorites.toList()).toString())
+            .apply()
+    }
+
+    fun loadFavorites(context: Context): Set<Long> {
+        val s = context.getSharedPreferences(PREF_NAME, 0).getString(KEY_FAVORITES, null) ?: return emptySet()
+        return runCatching {
+            val arr = JSONArray(s)
+            List(arr.length()) { arr.getLong(it) }.toSet()
+        }.getOrDefault(emptySet())
+    }
 }
 
 // --- App ---
@@ -201,6 +244,7 @@ fun PrivateDishApp() {
     var dishList: List<Dish> by remember { mutableStateOf(DishStore.loadDishes(context)) }
     var categoryList by remember { mutableStateOf(DishStore.loadCats(context)) }
     var orderHistory by remember { mutableStateOf(DishStore.loadOrders(context)) }
+    var favoriteIds by remember { mutableStateOf(DishStore.loadFavorites(context)) }
     val currentCart = remember { mutableStateListOf<OrderItem>() }
 
     val infiniteTransition = rememberInfiniteTransition(label = "gradient")
@@ -245,18 +289,36 @@ fun PrivateDishApp() {
     var isAdding by remember { mutableStateOf(false) }
     var viewingDish by remember { mutableStateOf<Dish?>(null) }
     var isManagingCats by remember { mutableStateOf(false) }
-    var isHistoryView by remember { mutableStateOf(false) }
+    var currentTab by remember { mutableStateOf(AppTab.HOME) }
     var viewingOrder by remember { mutableStateOf<Order?>(null) }
     var selectedCat by remember { mutableStateOf(categoryList.firstOrNull() ?: "") }
     var searchQuery by remember { mutableStateOf("") }
     var specDish by remember { mutableStateOf<Dish?>(null) }
+    val currentOrderId = viewingOrder?.id
+    var addAnimUri by remember { mutableStateOf<String?>(null) }
+    val addAnimProgress = remember { Animatable(0f) }
+
+    BackHandler(enabled = viewingOrder != null || currentTab != AppTab.HOME || isManagingCats || isAdding || editingDish != null || viewingDish != null) {
+        when {
+            viewingOrder != null -> viewingOrder = null
+            currentTab != AppTab.HOME -> currentTab = AppTab.HOME
+            isManagingCats -> isManagingCats = false
+            isAdding || editingDish != null -> { isAdding = false; editingDish = null }
+            viewingDish != null -> viewingDish = null
+        }
+    }
 
     LaunchedEffect(dishList) { DishStore.saveDishes(context, dishList) }
     LaunchedEffect(categoryList) { DishStore.saveCats(context, categoryList) }
     LaunchedEffect(orderHistory) { DishStore.saveOrders(context, orderHistory) }
+    LaunchedEffect(favoriteIds) { DishStore.saveFavorites(context, favoriteIds) }
 
     if (specDish != null) {
-        SpecDialog(specDish!!, { specDish = null }, { currentCart.add(it); specDish = null })
+        SpecDialog(specDish!!, { specDish = null }, { orderItem ->
+            currentCart.add(orderItem)
+            addAnimUri = orderItem.dishImage
+            specDish = null
+        })
     }
 
     val backgroundBrush = Brush.linearGradient(
@@ -265,6 +327,8 @@ fun PrivateDishApp() {
         end = androidx.compose.ui.geometry.Offset(1200f * shift + 400f, 2000f * (1f - shift) + 400f),
         tileMode = TileMode.Mirror
     )
+    val frequentPairs = remember(orderHistory, dishList) { calculateFrequentPairs(orderHistory, dishList) }
+
     Box(
         Modifier
             .fillMaxSize()
@@ -274,32 +338,70 @@ fun PrivateDishApp() {
         AnimatedContent(
             targetState = when {
                 viewingOrder != null -> 0
-                isHistoryView -> 1
-                isManagingCats -> 2
-                isAdding || editingDish != null -> 3
-                viewingDish != null -> 4
-                else -> 5
+                isManagingCats -> 1
+                isAdding || editingDish != null -> 2
+                viewingDish != null -> 3
+                currentTab == AppTab.ORDERS -> 4
+                currentTab == AppTab.PROFILE -> 5
+                else -> 6
             },
             label = "screen_transition"
         ) { state ->
             when (state) {
                 0 -> OrderDetailScreen(viewingOrder!!, { viewingOrder = null }, { img, txt, rate ->
-                    orderHistory = orderHistory.map { if (it.id == viewingOrder!!.id) it.copy(reviewImages = img, reviewText = txt, rating = rate, isCompleted = true) else it }
+                    currentOrderId?.let { orderId ->
+                        orderHistory = orderHistory.map { if (it.id == orderId) it.copy(reviewImages = img.filter { it.isNotBlank() }, reviewText = txt, rating = rate, isCompleted = true) else it }
+                    }
                     viewingOrder = null
-                }, { orderHistory = orderHistory.filter { it.id != viewingOrder!!.id }; viewingOrder = null })
-                1 -> HistoryScreen(orderHistory, { isHistoryView = false }, { viewingOrder = it }, { orderToDelete -> orderHistory = orderHistory.filter { it.id != orderToDelete.id } })
-                2 -> CategoryScreen(categoryList, { isManagingCats = false }, { newCats -> categoryList = newCats })
-                3 -> AddDishScreen(editingDish, categoryList, { isAdding = false; editingDish = null }, {
-                    dishList = if (editingDish != null) dishList.map { d -> if (d.id == editingDish!!.id) it else d } else dishList + it
+                }, {
+                    currentOrderId?.let { orderId -> orderHistory = orderHistory.filter { it.id != orderId } }
+                    viewingOrder = null
+                })
+                1 -> CategoryScreen(categoryList, { isManagingCats = false }, { newCats -> categoryList = newCats })
+                2 -> AddDishScreen(editingDish, categoryList, { isAdding = false; editingDish = null }, { savedDish ->
+                    val editingId = editingDish?.id
+                    dishList = if (editingId != null) dishList.map { d -> if (d.id == editingId) savedDish else d } else dishList + savedDish
                     isAdding = false; editingDish = null
                 })
-                4 -> DishDetailScreen(viewingDish!!, { viewingDish = null }, { editingDish = it; viewingDish = null }, { dishList = dishList.filter { d -> d.id != viewingDish!!.id }; viewingDish = null })
-                5 -> MainScreen(dishList, categoryList, selectedCat, searchQuery, { selectedCat = it }, { searchQuery = it }, { isAdding = true }, { isManagingCats = true }, { viewingDish = it }, { specDish = it })
+                3 -> DishDetailScreen(
+                    viewingDish!!,
+                    { viewingDish = null },
+                    { editingDish = it; viewingDish = null },
+                    { dishList = dishList.filter { d -> d.id != viewingDish!!.id }; viewingDish = null },
+                    isFavorite = favoriteIds.contains(viewingDish!!.id),
+                    onToggleFavorite = { dishId ->
+                        favoriteIds = if (favoriteIds.contains(dishId)) favoriteIds - dishId else favoriteIds + dishId
+                    }
+                )
+                4 -> HistoryScreen(orderHistory, { currentTab = AppTab.HOME }, { viewingOrder = it }, { orderToDelete -> orderHistory = orderHistory.filter { it.id != orderToDelete.id } })
+                5 -> MyScreen(
+                    favorites = dishList.filter { favoriteIds.contains(it.id) },
+                    onSpec = { specDish = it },
+                    onDish = { viewingDish = it },
+                    onRemoveFavorite = { dishId -> favoriteIds = favoriteIds - dishId }
+                )
+                6 -> MainScreen(
+                    dishes = dishList,
+                    cats = categoryList,
+                    selected = selectedCat,
+                    query = searchQuery,
+                    frequentPairs = frequentPairs,
+                    favoriteIds = favoriteIds,
+                    onToggleFavorite = { dishId ->
+                        favoriteIds = if (favoriteIds.contains(dishId)) favoriteIds - dishId else favoriteIds + dishId
+                    },
+                    onCat = { selectedCat = it },
+                    onSearch = { searchQuery = it },
+                    onAdd = { isAdding = true },
+                    onManage = { isManagingCats = true },
+                    onDish = { viewingDish = it },
+                    onSpec = { specDish = it }
+                )
             }
         }
 
         // 底部悬浮控制台
-        if (viewingOrder == null && !isHistoryView && !isManagingCats && !isAdding && editingDish == null && viewingDish == null) {
+        if (viewingOrder == null && !isManagingCats && !isAdding && editingDish == null && viewingDish == null) {
             Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 32.dp)) {
                 CartBar(currentCart, {
                     val newOrder = Order(items = currentCart.toList(), timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")))
@@ -308,29 +410,115 @@ fun PrivateDishApp() {
                     viewingOrder = newOrder
                 }, { currentCart.remove(it) })
             }
+        }
 
-            FloatingActionButton(
-                onClick = { isHistoryView = true },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(24.dp).shadow(12.dp, CircleShape),
+        if (viewingOrder == null && !isManagingCats && !isAdding && editingDish == null && viewingDish == null) {
+            NavigationBar(
+                modifier = Modifier.align(Alignment.BottomCenter).padding(horizontal = 16.dp, vertical = 8.dp),
                 containerColor = Color(0xFF1B1F3B),
-                contentColor = Color(0xFF36D1FF)
-            ) { Icon(Icons.Default.History, "历程") }
+                tonalElevation = 6.dp
+            ) {
+                NavigationBarItem(
+                    selected = currentTab == AppTab.HOME,
+                    onClick = { currentTab = AppTab.HOME },
+                    icon = { Icon(Icons.Default.Home, null) },
+                    label = { Text("首页") }
+                )
+                NavigationBarItem(
+                    selected = currentTab == AppTab.ORDERS,
+                    onClick = { currentTab = AppTab.ORDERS },
+                    icon = { Icon(Icons.Default.History, null) },
+                    label = { Text("订单") }
+                )
+                NavigationBarItem(
+                    selected = currentTab == AppTab.PROFILE,
+                    onClick = { currentTab = AppTab.PROFILE },
+                    icon = { Icon(Icons.Default.Favorite, null) },
+                    label = { Text("我的") }
+                )
+            }
+        }
+
+        if (addAnimUri != null) {
+            val configuration = LocalConfiguration.current
+            val density = LocalDensity.current
+            val widthPx = with(density) { configuration.screenWidthDp.dp.toPx() }
+            val heightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
+            val progress = addAnimProgress.value
+            LaunchedEffect(addAnimUri) {
+                addAnimProgress.snapTo(0f)
+                addAnimProgress.animateTo(1f, tween(700, easing = FastOutSlowInEasing))
+                addAnimUri = null
+            }
+            val startX = widthPx * 0.55f
+            val startY = heightPx * 0.45f
+            val endX = widthPx * 0.78f
+            val endY = heightPx * 0.88f
+            val x = startX + (endX - startX) * progress
+            val baseY = startY + (endY - startY) * progress
+            val arc = -heightPx * 0.18f * (4f * progress * (1f - progress))
+            val y = baseY + arc
+
+            Box(
+                modifier = Modifier
+                    .offset { IntOffset(x.roundToInt(), y.roundToInt()) }
+                    .size(46.dp)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.85f))
+                    .border(2.dp, Color(0xFFFFC857), CircleShape)
+                    .shadow(8.dp, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                if (addAnimUri != null) {
+                    Image(
+                        painter = rememberAsyncImagePainter(addAnimUri),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize().clip(CircleShape),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Icon(Icons.Default.AddShoppingCart, null, tint = Color(0xFFFF4FD8))
+                }
+            }
         }
     }
 }
 
 @Composable
 fun MainScreen(
-    dishes: List<Dish>, cats: List<String>, selected: String, query: String,
-    onCat: (String) -> Unit, onSearch: (String) -> Unit, onAdd: () -> Unit, onManage: () -> Unit,
-    onDish: (Dish) -> Unit, onSpec: (Dish) -> Unit
+    dishes: List<Dish>,
+    cats: List<String>,
+    selected: String,
+    query: String,
+    frequentPairs: List<Pair<Dish, Dish>>,
+    favoriteIds: Set<Long>,
+    onToggleFavorite: (Long) -> Unit,
+    onCat: (String) -> Unit,
+    onSearch: (String) -> Unit,
+    onAdd: () -> Unit,
+    onManage: () -> Unit,
+    onDish: (Dish) -> Unit,
+    onSpec: (Dish) -> Unit
 ) {
     val filtered = dishes.filter { (it.category == selected || selected.isEmpty()) && it.name.contains(query, true) }
     var searchVisible by remember { mutableStateOf(false) }
+    var isLoading by remember { mutableStateOf(true) }
     val neonTextShadow = Shadow(
         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
         blurRadius = 16f
     )
+    val skeletonTransition = rememberInfiniteTransition(label = "skeleton")
+    val skeletonAlpha by skeletonTransition.animateFloat(
+        initialValue = 0.45f,
+        targetValue = 0.85f,
+        animationSpec = infiniteRepeatable(animation = tween(900, easing = LinearEasing), repeatMode = RepeatMode.Reverse),
+        label = "skeleton_alpha"
+    )
+
+    LaunchedEffect(Unit) {
+        delay(600)
+        isLoading = false
+    }
 
     Scaffold(
         topBar = {
@@ -409,9 +597,24 @@ fun MainScreen(
                 }
                 IconButton(onClick = onManage, modifier = Modifier.align(Alignment.CenterHorizontally).padding(vertical = 16.dp)) { Icon(Icons.Default.Settings, null, tint = Color.LightGray) }
             }
-            LazyColumn(modifier = Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(16.dp), contentPadding = PaddingValues(bottom = 120.dp)) {
-                items(filtered) { d ->
-                    DishCard(d, onDish, onSpec)
+            LazyColumn(
+                modifier = Modifier.fillMaxSize().padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                contentPadding = PaddingValues(bottom = 200.dp)
+            ) {
+                if (frequentPairs.isNotEmpty()) {
+                    item {
+                        FrequentPairSection(frequentPairs, onDish, onSpec)
+                    }
+                }
+                if (isLoading) {
+                    items(4) {
+                        DishSkeletonCard(skeletonAlpha)
+                    }
+                } else {
+                    items(filtered) { d ->
+                        DishCard(d, onDish, onSpec, favoriteIds.contains(d.id), onToggleFavorite)
+                    }
                 }
             }
         }
@@ -419,7 +622,103 @@ fun MainScreen(
 }
 
 @Composable
-fun DishCard(dish: Dish, onClick: (Dish) -> Unit, onSpec: (Dish) -> Unit) {
+fun DishSkeletonCard(alpha: Float) {
+    val skeletonBrush = Brush.linearGradient(
+        listOf(
+            Color.LightGray.copy(alpha = alpha),
+            Color.White.copy(alpha = alpha * 0.6f),
+            Color.LightGray.copy(alpha = alpha)
+        )
+    )
+    Card(
+        shape = RoundedCornerShape(28.dp),
+        modifier = Modifier.fillMaxWidth().height(120.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFF0F0F0).copy(alpha = 0.7f))
+    ) {
+        Row(Modifier.fillMaxSize().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(86.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(skeletonBrush)
+            )
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(
+                    modifier = Modifier
+                        .height(18.dp)
+                        .fillMaxWidth(0.7f)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(skeletonBrush)
+                )
+                Box(
+                    modifier = Modifier
+                        .height(14.dp)
+                        .fillMaxWidth(0.5f)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(skeletonBrush)
+                )
+                Box(
+                    modifier = Modifier
+                        .height(16.dp)
+                        .fillMaxWidth(0.4f)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(skeletonBrush)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun FrequentPairSection(
+    pairs: List<Pair<Dish, Dish>>,
+    onDish: (Dish) -> Unit,
+    onSpec: (Dish) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("常一起点的菜品", fontWeight = FontWeight.Black, fontSize = 18.sp, color = Color.White)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            items(pairs) { pair ->
+                Card(
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))
+                ) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Image(
+                                painter = rememberAsyncImagePainter(pair.first.imageUris.firstOrNull() ?: Icons.Default.RestaurantMenu),
+                                contentDescription = null,
+                                modifier = Modifier.size(54.dp).clip(RoundedCornerShape(12.dp)),
+                                contentScale = ContentScale.Crop
+                            )
+                            Image(
+                                painter = rememberAsyncImagePainter(pair.second.imageUris.firstOrNull() ?: Icons.Default.RestaurantMenu),
+                                contentDescription = null,
+                                modifier = Modifier.size(54.dp).clip(RoundedCornerShape(12.dp)),
+                                contentScale = ContentScale.Crop
+                            )
+                        }
+                        Text("${pair.first.name} + ${pair.second.name}", fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(onClick = { onDish(pair.first) }) { Text("看${pair.first.name}") }
+                            TextButton(onClick = { onSpec(pair.second) }) { Text("点${pair.second.name}") }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun DishCard(
+    dish: Dish,
+    onClick: (Dish) -> Unit,
+    onSpec: (Dish) -> Unit,
+    isFavorite: Boolean,
+    onToggleFavorite: (Long) -> Unit
+) {
     val cardGlow = Brush.linearGradient(
         listOf(
             Color(0x66FF4FD8),
@@ -442,7 +741,7 @@ fun DishCard(dish: Dish, onClick: (Dish) -> Unit, onSpec: (Dish) -> Unit) {
         ) {
             Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                 Image(
-                    painter = rememberAsyncImagePainter(dish.imageUri ?: Icons.Default.RestaurantMenu),
+                    painter = rememberAsyncImagePainter(dish.imageUris.firstOrNull() ?: Icons.Default.RestaurantMenu),
                     contentDescription = null,
                     modifier = Modifier.size(95.dp).clip(RoundedCornerShape(20.dp)),
                     contentScale = ContentScale.Crop
@@ -480,6 +779,13 @@ fun DishCard(dish: Dish, onClick: (Dish) -> Unit, onSpec: (Dish) -> Unit) {
                     ),
                     border = BorderStroke(1.dp, Color(0x55FFFFFF))
                 ) { Text("定制", fontWeight = FontWeight.Bold) }
+                IconButton(onClick = { onToggleFavorite(dish.id) }) {
+                    Icon(
+                        imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                        contentDescription = null,
+                        tint = if (isFavorite) Color(0xFFFF4FD8) else Color.White.copy(alpha = 0.6f)
+                    )
+                }
             }
         }
     }
@@ -488,6 +794,16 @@ fun DishCard(dish: Dish, onClick: (Dish) -> Unit, onSpec: (Dish) -> Unit) {
 @Composable
 fun CartBar(items: List<OrderItem>, onOrder: () -> Unit, onRemove: (OrderItem) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
+    val badgeScale by animateFloatAsState(
+        targetValue = if (items.isNotEmpty()) 1f else 0.8f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+        label = "badge_scale"
+    )
+    val badgePulse by animateFloatAsState(
+        targetValue = if (items.isNotEmpty()) 1.05f else 1f,
+        animationSpec = tween(260),
+        label = "badge_pulse"
+    )
     val cartGlow = Brush.horizontalGradient(
         listOf(
             Color(0xFF2C3E50).copy(alpha = 0.7f),
@@ -495,6 +811,7 @@ fun CartBar(items: List<OrderItem>, onOrder: () -> Unit, onRemove: (OrderItem) -
             Color(0xFF8E54E9).copy(alpha = 0.7f)
         )
     )
+    val totalPrice = items.sumOf { it.price }
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         if (expanded && items.isNotEmpty()) {
@@ -531,11 +848,23 @@ fun CartBar(items: List<OrderItem>, onOrder: () -> Unit, onRemove: (OrderItem) -
                                 Spacer(Modifier.width(12.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text(itm.dishName, fontWeight = FontWeight.Bold)
-                                    Text("${itm.oilLevel.label} · ${itm.spicy.label}", fontSize = 11.sp, color = Color.Gray)
+                                    Text(
+                                        "${itm.oilLevel.label} · ${itm.spicy.label}",
+                                        fontSize = 11.sp,
+                                        color = Color.White.copy(alpha = 0.85f)
+                                    )
                                 }
                                 IconButton(onClick = { onRemove(itm) }) { Icon(Icons.Default.RemoveCircle, null, tint = Color.Red.copy(alpha = 0.6f)) }
                             }
                         }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("今日合计", fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.85f))
+                        Text(String.format("¥%.2f", totalPrice), fontWeight = FontWeight.Black, color = Color(0xFFFFC857), fontSize = 18.sp)
                     }
                     Button(onClick = onOrder, modifier = Modifier.fillMaxWidth().height(54.dp).padding(top = 12.dp), shape = RoundedCornerShape(16.dp)) {
                         Text("确认并下单", fontWeight = FontWeight.Bold, fontSize = 16.sp)
@@ -548,7 +877,11 @@ fun CartBar(items: List<OrderItem>, onOrder: () -> Unit, onRemove: (OrderItem) -
             shape = CircleShape, color = if(items.isEmpty()) Color.LightGray else MaterialTheme.colorScheme.primary
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                BadgedBox(badge = { if(items.isNotEmpty()) Badge { Text("${items.size}") } }) {
+                BadgedBox(badge = {
+                    if (items.isNotEmpty()) {
+                        Badge(modifier = Modifier.scale(badgeScale * badgePulse)) { Text("${items.size}") }
+                    }
+                }) {
                     Icon(Icons.Default.RestaurantMenu, null, tint = Color.White)
                 }
                 Spacer(Modifier.width(16.dp))
@@ -566,8 +899,7 @@ fun AddDishScreen(editing: Dish?, cats: List<String>, onBack: () -> Unit, onSave
     var cat by remember { mutableStateOf(editing?.category ?: (cats.firstOrNull() ?: "")) }
     var remark by remember { mutableStateOf(editing?.remark ?: "") }
     var ingredients by remember { mutableStateOf(editing?.mainIngredients ?: "") }
-    var stepsText by remember { mutableStateOf(editing?.steps?.joinToString("\n") ?: "") }
-    var imgUri by remember { mutableStateOf(editing?.imageUri ?: "") }
+    var imageUris by remember { mutableStateOf(editing?.imageUris ?: emptyList()) }
     val pinkMist = Brush.verticalGradient(
         listOf(
             Color(0xFFFFEEF7),
@@ -576,11 +908,12 @@ fun AddDishScreen(editing: Dish?, cats: List<String>, onBack: () -> Unit, onSave
         )
     )
 
-    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        uri?.let {
+    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { uris ->
+        if (uris.isNotEmpty()) {
             val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
-            runCatching { context.contentResolver.takePersistableUriPermission(it, flags) }
-            imgUri = it.toString()
+            uris.forEach { uri -> runCatching { context.contentResolver.takePersistableUriPermission(uri, flags) } }
+            val newUris = uris.map { it.toString() }
+            imageUris = (imageUris + newUris).distinct()
         }
     }
 
@@ -603,7 +936,7 @@ fun AddDishScreen(editing: Dish?, cats: List<String>, onBack: () -> Unit, onSave
                     if (name.isNotBlank() && price.isNotBlank()) {
                         onSave(Dish(
                             id = editing?.id ?: System.currentTimeMillis(),
-                            name = name, imageUri = imgUri.takeIf { it.isNotBlank() }, price = price,
+                            name = name, imageUris = imageUris, price = price,
                             firstMakeDate = editing?.firstMakeDate ?: LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")),
                             remark = remark, category = cat, mainIngredients = ingredients,
                             steps = steps.filter { it.isNotBlank() } // 过滤掉空步骤
@@ -632,15 +965,35 @@ fun AddDishScreen(editing: Dish?, cats: List<String>, onBack: () -> Unit, onSave
                 },
                 contentAlignment = Alignment.Center
             ) {
-                if (imgUri.isNotBlank()) {
-                    Image(rememberAsyncImagePainter(imgUri), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                if (imageUris.isNotEmpty()) {
+                    Image(rememberAsyncImagePainter(imageUris.first()), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                     Box(Modifier.fillMaxSize().background(Color.Black.copy(0.25f)), contentAlignment = Alignment.Center) {
-                        Text("点击更换照片", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text("点击添加更多照片", color = Color.White, fontWeight = FontWeight.Bold)
                     }
                 } else {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(Icons.Default.AddAPhoto, null, Modifier.size(56.dp), tint = Color(0xFFD86AAE))
                         Text("上传本地照片", color = Color(0xFFD86AAE), fontWeight = FontWeight.Medium)
+                    }
+                }
+            }
+            if (imageUris.isNotEmpty()) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(imageUris) { uri ->
+                        Box {
+                            Image(
+                                painter = rememberAsyncImagePainter(uri),
+                                contentDescription = null,
+                                modifier = Modifier.size(96.dp).clip(RoundedCornerShape(16.dp)),
+                                contentScale = ContentScale.Crop
+                            )
+                            IconButton(
+                                onClick = { imageUris = imageUris - uri },
+                                modifier = Modifier.align(Alignment.TopEnd).size(26.dp).background(Color.Black.copy(0.5f), CircleShape)
+                            ) {
+                                Icon(Icons.Default.Close, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                            }
+                        }
                     }
                 }
             }
@@ -702,6 +1055,7 @@ fun AddDishScreen(editing: Dish?, cats: List<String>, onBack: () -> Unit, onSave
 
 @Composable
 fun HistoryScreen(orders: List<Order>, onBack: () -> Unit, onOrderClick: (Order) -> Unit, onDeleteOrder: (Order) -> Unit) {
+    BackHandler(onBack = onBack)
     Scaffold(topBar = { TopAppBar(title = { Text("时光菜单", fontWeight = FontWeight.Black) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } }) }) { p ->
         if (orders.isEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("还没有任何美食足迹...") }
         else LazyColumn(modifier = Modifier.padding(p).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -728,6 +1082,57 @@ fun HistoryScreen(orders: List<Order>, onBack: () -> Unit, onOrderClick: (Order)
                         // 删除按钮 position微调
                         IconButton(onClick = { onDeleteOrder(o) }, modifier = Modifier.align(Alignment.TopEnd).padding(4.dp)) {
                             Icon(Icons.Default.Delete, null, tint = Color.Red.copy(alpha = 0.4f), modifier = Modifier.size(22.dp))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun MyScreen(
+    favorites: List<Dish>,
+    onSpec: (Dish) -> Unit,
+    onDish: (Dish) -> Unit,
+    onRemoveFavorite: (Long) -> Unit
+) {
+    Scaffold(
+        topBar = { TopAppBar(title = { Text("我的", fontWeight = FontWeight.Black) }) }
+    ) { p ->
+        Column(
+            Modifier
+                .padding(p)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text("收藏", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            if (favorites.isEmpty()) {
+                Text("还没有收藏任何菜品，快去收藏常点的菜吧~", color = Color.Gray)
+            } else {
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(favorites) { dish ->
+                        Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                            Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Image(
+                                    painter = rememberAsyncImagePainter(dish.imageUris.firstOrNull() ?: Icons.Default.RestaurantMenu),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(70.dp).clip(RoundedCornerShape(16.dp)),
+                                    contentScale = ContentScale.Crop
+                                )
+                                Spacer(Modifier.width(12.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(dish.name, fontWeight = FontWeight.Bold)
+                                    Text("¥${dish.price}", color = Color(0xFFFFC857), fontWeight = FontWeight.Bold)
+                                }
+                                Column(horizontalAlignment = Alignment.End) {
+                                    TextButton(onClick = { onDish(dish) }) { Text("查看") }
+                                    Button(onClick = { onSpec(dish) }, shape = RoundedCornerShape(12.dp)) { Text("再来一份") }
+                                    IconButton(onClick = { onRemoveFavorite(dish.id) }) {
+                                        Icon(Icons.Default.Delete, null, tint = Color.Red.copy(alpha = 0.6f))
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -801,13 +1206,23 @@ fun ReviewDialog(
     onDismiss: () -> Unit,
     onConfirm: (List<String>, String?, Int) -> Unit
 ) {
+    val context = LocalContext.current
     var images by remember { mutableStateOf(reviewImages) }
     var text by remember { mutableStateOf(reviewText ?: "") }
     var currentRating by remember { mutableIntStateOf(rating) }
 
+    LaunchedEffect(reviewImages) {
+        val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+        reviewImages.forEach { uriString ->
+            runCatching { context.contentResolver.takePersistableUriPermission(Uri.parse(uriString), flags) }
+        }
+    }
+
     // 修复闪退：使用 PickMultipleVisualMedia 处理图片选择
     val multiPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { uris ->
         if (uris.isNotEmpty()) {
+            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+            uris.forEach { uri -> runCatching { context.contentResolver.takePersistableUriPermission(uri, flags) } }
             images = images + uris.map { it.toString() }
         }
     }
@@ -861,7 +1276,7 @@ fun ReviewDialog(
         },
         confirmButton = {
             Button(
-                onClick = { onConfirm(images, text.takeIf { it.isNotBlank() }, currentRating) },
+                onClick = { onConfirm(images.filter { it.isNotBlank() }, text.takeIf { it.isNotBlank() }, currentRating) },
                 enabled = currentRating > 0,
                 shape = RoundedCornerShape(16.dp)
             ) { Text("保存足迹", fontWeight = FontWeight.Bold) }
@@ -949,7 +1364,10 @@ fun SpecDialog(dish: Dish, onDismiss: () -> Unit, onConfirm: (OrderItem) -> Unit
             }
         },
         confirmButton = {
-            Button(onClick = { onConfirm(OrderItem(dish.id, dish.name, dish.imageUri, oil, dietaries.toList(), spicy, dish.steps)) }, shape = RoundedCornerShape(16.dp)) { Text("确认选择") }
+            Button(
+                onClick = { onConfirm(OrderItem(dish.id, dish.name, dish.imageUris.firstOrNull(), parsePrice(dish.price), oil, dietaries.toList(), spicy, dish.steps)) },
+                shape = RoundedCornerShape(16.dp)
+            ) { Text("确认选择") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("取消") }
@@ -959,7 +1377,27 @@ fun SpecDialog(dish: Dish, onDismiss: () -> Unit, onConfirm: (OrderItem) -> Unit
 }
 
 @Composable
-fun DishDetailScreen(dish: Dish, onBack: () -> Unit, onEdit: (Dish) -> Unit, onDelete: () -> Unit) {
+fun DishDetailScreen(
+    dish: Dish,
+    onBack: () -> Unit,
+    onEdit: (Dish) -> Unit,
+    onDelete: () -> Unit,
+    isFavorite: Boolean,
+    onToggleFavorite: (Long) -> Unit
+) {
+    val carouselImages = remember(dish.imageUris) { dish.imageUris.filter { it.isNotBlank() } }
+    val carouselState = rememberLazyListState()
+
+    LaunchedEffect(carouselImages) {
+        if (carouselImages.size > 1) {
+            while (true) {
+                delay(2000)
+                val next = (carouselState.firstVisibleItemIndex + 1) % carouselImages.size
+                carouselState.animateScrollToItem(next)
+            }
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -967,6 +1405,13 @@ fun DishDetailScreen(dish: Dish, onBack: () -> Unit, onEdit: (Dish) -> Unit, onD
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } },
                 actions = {
                     IconButton(onClick = { onEdit(dish) }) { Icon(Icons.Default.Edit, null) }
+                    IconButton(onClick = { onToggleFavorite(dish.id) }) {
+                        Icon(
+                            imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                            contentDescription = null,
+                            tint = if (isFavorite) Color(0xFFFF4FD8) else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                     IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, null, tint = Color.Red) }
                 }
             )
@@ -974,12 +1419,32 @@ fun DishDetailScreen(dish: Dish, onBack: () -> Unit, onEdit: (Dish) -> Unit, onD
     ) { p ->
         Column(Modifier.padding(p).padding(16.dp).verticalScroll(rememberScrollState())) {
             Card(shape = RoundedCornerShape(32.dp), elevation = CardDefaults.cardElevation(6.dp)) {
-                Image(
-                    painter = rememberAsyncImagePainter(dish.imageUri ?: Icons.Default.RestaurantMenu),
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxWidth().height(300.dp),
-                    contentScale = ContentScale.Crop
-                )
+                if (carouselImages.isEmpty()) {
+                    Image(
+                        painter = rememberAsyncImagePainter(Icons.Default.RestaurantMenu),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxWidth().height(300.dp),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    LazyRow(
+                        state = carouselState,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(300.dp),
+                        horizontalArrangement = Arrangement.spacedBy(0.dp),
+                        userScrollEnabled = carouselImages.size > 1
+                    ) {
+                        items(carouselImages) { uri ->
+                            Image(
+                                painter = rememberAsyncImagePainter(uri),
+                                contentDescription = null,
+                                modifier = Modifier.fillParentMaxWidth().height(300.dp),
+                                contentScale = ContentScale.Crop
+                            )
+                        }
+                    }
+                }
             }
             Spacer(Modifier.height(24.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -1003,4 +1468,29 @@ fun DishDetailScreen(dish: Dish, onBack: () -> Unit, onEdit: (Dish) -> Unit, onD
             }
         }
     }
+}
+
+private fun calculateFrequentPairs(orders: List<Order>, dishes: List<Dish>): List<Pair<Dish, Dish>> {
+    if (orders.isEmpty() || dishes.isEmpty()) return emptyList()
+    val dishById = dishes.associateBy { it.id }
+    val pairCounts = mutableMapOf<Pair<Long, Long>, Int>()
+    orders.forEach { order ->
+        val uniqueIds = order.items.map { it.dishId }.distinct()
+        for (i in 0 until uniqueIds.size) {
+            for (j in i + 1 until uniqueIds.size) {
+                val a = minOf(uniqueIds[i], uniqueIds[j])
+                val b = maxOf(uniqueIds[i], uniqueIds[j])
+                val key = a to b
+                pairCounts[key] = (pairCounts[key] ?: 0) + 1
+            }
+        }
+    }
+    return pairCounts.entries
+        .sortedByDescending { it.value }
+        .mapNotNull { (pair, _) ->
+            val first = dishById[pair.first]
+            val second = dishById[pair.second]
+            if (first != null && second != null) first to second else null
+        }
+        .take(6)
 }
