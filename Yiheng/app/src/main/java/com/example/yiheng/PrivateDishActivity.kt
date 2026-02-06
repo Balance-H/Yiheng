@@ -3,6 +3,7 @@
 package com.example.yiheng
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -37,6 +38,7 @@ import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.Shadow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -559,6 +561,7 @@ fun CartBar(items: List<OrderItem>, onOrder: () -> Unit, onRemove: (OrderItem) -
 
 @Composable
 fun AddDishScreen(editing: Dish?, cats: List<String>, onBack: () -> Unit, onSave: (Dish) -> Unit) {
+    val context = LocalContext.current
     var name by remember { mutableStateOf(editing?.name ?: "") }
     var price by remember { mutableStateOf(editing?.price ?: "") }
     var cat by remember { mutableStateOf(editing?.category ?: (cats.firstOrNull() ?: "")) }
@@ -566,16 +569,34 @@ fun AddDishScreen(editing: Dish?, cats: List<String>, onBack: () -> Unit, onSave
     var ingredients by remember { mutableStateOf(editing?.mainIngredients ?: "") }
     var stepsText by remember { mutableStateOf(editing?.steps?.joinToString("\n") ?: "") }
     var imgUri by remember { mutableStateOf(editing?.imageUri ?: "") }
+    val pinkMist = Brush.verticalGradient(
+        listOf(
+            Color(0xFFFFEEF7),
+            Color(0xFFF9D6EA),
+            Color(0xFFF6C3E0)
+        )
+    )
 
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        uri?.let { imgUri = it.toString() }
+        uri?.let {
+            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+            runCatching { context.contentResolver.takePersistableUriPermission(it, flags) }
+            imgUri = it.toString()
+        }
     }
     
     // 核心修改：步骤管理
     var steps by remember { mutableStateOf(editing?.steps.orEmpty().ifEmpty { listOf("") }) }
     
     Scaffold(
-        topBar = { TopAppBar(title = { Text(if(editing==null) "新增珍馐" else "优化菜品", fontWeight = FontWeight.Bold) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } }) },
+        containerColor = Color.Transparent,
+        topBar = {
+            TopAppBar(
+                title = { Text(if (editing == null) "新增珍馐" else "优化菜品", fontWeight = FontWeight.Bold) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFFF8CFE4))
+            )
+        },
         // 修复：将保存按钮固定在底部
         bottomBar = {
              Button(
@@ -591,28 +612,36 @@ fun AddDishScreen(editing: Dish?, cats: List<String>, onBack: () -> Unit, onSave
                     }
                 },
                 modifier = Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 16.dp, vertical = 8.dp),
-                shape = RoundedCornerShape(16.dp)
+                shape = RoundedCornerShape(18.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE79AC3), contentColor = Color.White)
             ) { Text("保存菜谱", fontSize = 18.sp, fontWeight = FontWeight.Bold) }
         }
     ) { p ->
         // 主内容区，现在可以完全滚动
-        Column(Modifier.padding(p).padding(horizontal = 16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Column(
+            Modifier
+                .background(pinkMist)
+                .padding(p)
+                .padding(horizontal = 16.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
             // 图片上传区域
             Box(
-                Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(28.dp)).background(MaterialTheme.colorScheme.surfaceVariant).clickable {
+                Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(28.dp)).background(Color(0xFFFBE6F2)).clickable {
                     photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                 },
                 contentAlignment = Alignment.Center
             ) {
                 if (imgUri.isNotBlank()) {
                     Image(rememberAsyncImagePainter(imgUri), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                    Box(Modifier.fillMaxSize().background(Color.Black.copy(0.3f)), contentAlignment = Alignment.Center) {
+                    Box(Modifier.fillMaxSize().background(Color.Black.copy(0.25f)), contentAlignment = Alignment.Center) {
                         Text("点击更换照片", color = Color.White, fontWeight = FontWeight.Bold)
                     }
                 } else {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Default.AddAPhoto, null, Modifier.size(56.dp), tint = MaterialTheme.colorScheme.primary)
-                        Text("上传本地照片", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
+                        Icon(Icons.Default.AddAPhoto, null, Modifier.size(56.dp), tint = Color(0xFFD86AAE))
+                        Text("上传本地照片", color = Color(0xFFD86AAE), fontWeight = FontWeight.Medium)
                     }
                 }
             }
@@ -620,7 +649,7 @@ fun AddDishScreen(editing: Dish?, cats: List<String>, onBack: () -> Unit, onSave
             OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("菜名") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp))
             OutlinedTextField(value = price, onValueChange = { price = it }, label = { Text("估价 (¥)") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp))
             
-            Text("所属分类", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            Text("所属分类", fontWeight = FontWeight.Bold, color = Color(0xFFD86AAE))
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(cats) { c ->
                     FilterChip(selected = cat == c, onClick = { cat = c }, label = { Text(c) }, shape = CircleShape)
@@ -630,7 +659,7 @@ fun AddDishScreen(editing: Dish?, cats: List<String>, onBack: () -> Unit, onSave
             OutlinedTextField(value = ingredients, onValueChange = { ingredients = it }, label = { Text("核心食材") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp))
             OutlinedTextField(value = remark, onValueChange = { remark = it }, label = { Text("独门秘籍/备注") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp))
             
-            Text("烹饪秘籍 (每条一步)", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            Text("烹饪秘籍 (每条一步)", fontWeight = FontWeight.Bold, color = Color(0xFFD86AAE))
             
             // 步骤列表管理区域
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -659,7 +688,7 @@ fun AddDishScreen(editing: Dish?, cats: List<String>, onBack: () -> Unit, onSave
                     onClick = { steps = steps + "" },
                     modifier = Modifier.align(Alignment.Start),
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.primary)
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF4D1E5), contentColor = Color(0xFFD86AAE))
                 ) {
                     Icon(Icons.Default.Add, null)
                     Spacer(Modifier.width(4.dp))
