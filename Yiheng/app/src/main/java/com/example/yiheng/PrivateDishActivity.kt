@@ -11,7 +11,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -30,9 +32,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.shadow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -198,6 +202,44 @@ fun PrivateDishApp() {
     var orderHistory by remember { mutableStateOf(DishStore.loadOrders(context)) }
     val currentCart = remember { mutableStateListOf<OrderItem>() }
 
+    val infiniteTransition = rememberInfiniteTransition(label = "gradient")
+    val shift by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(12000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "shift"
+    )
+    val glowA by infiniteTransition.animateColor(
+        initialValue = Color(0xFF6A5BFF),
+        targetValue = Color(0xFFFF4FD8),
+        animationSpec = infiniteRepeatable(
+            animation = tween(9000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "glowA"
+    )
+    val glowB by infiniteTransition.animateColor(
+        initialValue = Color(0xFF25D0FF),
+        targetValue = Color(0xFFFFC857),
+        animationSpec = infiniteRepeatable(
+            animation = tween(11000, easing = LinearOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "glowB"
+    )
+    val glowC by infiniteTransition.animateColor(
+        initialValue = Color(0xFF8BFF6A),
+        targetValue = Color(0xFF6AF7FF),
+        animationSpec = infiniteRepeatable(
+            animation = tween(10000, easing = FastOutLinearInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "glowC"
+    )
+
     var editingDish: Dish? by remember { mutableStateOf(null) }
     var isAdding by remember { mutableStateOf(false) }
     var viewingDish by remember { mutableStateOf<Dish?>(null) }
@@ -216,9 +258,17 @@ fun PrivateDishApp() {
         SpecDialog(specDish!!, { specDish = null }, { currentCart.add(it); specDish = null })
     }
 
-    Box(Modifier.fillMaxSize().background(
-        Brush.verticalGradient(listOf(MaterialTheme.colorScheme.surface, MaterialTheme.colorScheme.surfaceVariant))
-    )) {
+    val backgroundBrush = Brush.linearGradient(
+        colors = listOf(glowA, glowB, glowC, glowA),
+        start = androidx.compose.ui.geometry.Offset.Zero,
+        end = androidx.compose.ui.geometry.Offset(1200f * shift + 400f, 2000f * (1f - shift) + 400f),
+        tileMode = TileMode.Mirror
+    )
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(backgroundBrush)
+    ) {
         // 使用 AnimatedContent 增加页面切换动感
         AnimatedContent(
             targetState = when {
@@ -261,8 +311,8 @@ fun PrivateDishApp() {
             FloatingActionButton(
                 onClick = { isHistoryView = true },
                 modifier = Modifier.align(Alignment.BottomEnd).padding(24.dp).shadow(12.dp, CircleShape),
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.primary
+                containerColor = Color(0xFF1B1F3B),
+                contentColor = Color(0xFF36D1FF)
             ) { Icon(Icons.Default.History, "历程") }
         }
     }
@@ -276,12 +326,34 @@ fun MainScreen(
 ) {
     val filtered = dishes.filter { (it.category == selected || selected.isEmpty()) && it.name.contains(query, true) }
     var searchVisible by remember { mutableStateOf(false) }
+    val neonTextShadow = shadow(
+        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+        blurRadius = 16f
+    )
 
     Scaffold(
         topBar = {
-            Column(Modifier.background(MaterialTheme.colorScheme.surface.copy(alpha = 0.9f))) {
+            Column(
+                Modifier
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                            )
+                        )
+                    )
+            ) {
                 TopAppBar(
-                    title = { Text("吾家私房菜", fontWeight = FontWeight.Black, fontSize = 26.sp) },
+                    title = {
+                        Text(
+                            "吾家私房菜",
+                            fontWeight = FontWeight.Black,
+                            fontSize = 26.sp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            style = MaterialTheme.typography.titleLarge.copy(shadow = neonTextShadow)
+                        )
+                    },
                     actions = {
                         IconButton(onClick = { searchVisible = !searchVisible }) { Icon(Icons.Default.Search, null) }
                         IconButton(onClick = onAdd) { Icon(Icons.Default.AddCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(36.dp)) }
@@ -301,11 +373,37 @@ fun MainScreen(
         containerColor = Color.Transparent
     ) { p ->
         Row(Modifier.padding(p).fillMaxSize()) {
-            Column(Modifier.width(96.dp).fillMaxHeight().background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)).verticalScroll(rememberScrollState())) {
+            Column(
+                Modifier
+                    .width(96.dp)
+                    .fillMaxHeight()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
+                            )
+                        )
+                    )
+                    .verticalScroll(rememberScrollState())
+            ) {
                 cats.forEach { c ->
                     val isSel = c == selected
-                    Box(Modifier.fillMaxWidth().clickable { onCat(c) }.background(if (isSel) MaterialTheme.colorScheme.surface else Color.Transparent).padding(vertical = 24.dp), contentAlignment = Alignment.Center) {
-                        Text(c, fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal, color = if (isSel) MaterialTheme.colorScheme.primary else Color.Gray)
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { onCat(c) }
+                            .background(
+                                if (isSel) MaterialTheme.colorScheme.surface.copy(alpha = 0.8f) else Color.Transparent
+                            )
+                            .padding(vertical = 24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            c,
+                            fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
+                            color = if (isSel) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.75f)
+                        )
                     }
                 }
                 IconButton(onClick = onManage, modifier = Modifier.align(Alignment.CenterHorizontally).padding(vertical = 16.dp)) { Icon(Icons.Default.Settings, null, tint = Color.LightGray) }
@@ -321,13 +419,27 @@ fun MainScreen(
 
 @Composable
 fun DishCard(dish: Dish, onClick: (Dish) -> Unit, onSpec: (Dish) -> Unit) {
+    val cardGlow = Brush.linearGradient(
+        listOf(
+            Color(0x66FF4FD8),
+            Color(0x6636D1FF),
+            Color(0x668BFF6A)
+        )
+    )
     Card(
         onClick = { onClick(dish) },
         shape = RoundedCornerShape(28.dp),
-        modifier = Modifier.fillMaxWidth().shadow(8.dp, RoundedCornerShape(28.dp)),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(12.dp, RoundedCornerShape(28.dp)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
     ) {
-        Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .background(cardGlow)
+                .padding(1.dp)
+        ) {
+            Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             Image(
                 painter = rememberAsyncImagePainter(dish.imageUri ?: Icons.Default.RestaurantMenu),
                 contentDescription = null,
@@ -336,15 +448,38 @@ fun DishCard(dish: Dish, onClick: (Dish) -> Unit, onSpec: (Dish) -> Unit) {
             )
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
-                Text(dish.name, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                if (!dish.mainIngredients.isNullOrBlank()) Text(dish.mainIngredients, fontSize = 12.sp, color = Color.Gray, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("¥${dish.price}", fontSize = 22.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
+                Text(
+                    dish.name,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                if (!dish.mainIngredients.isNullOrBlank()) {
+                    Text(
+                        dish.mainIngredients,
+                        fontSize = 12.sp,
+                        color = Color.White.copy(alpha = 0.65f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Text(
+                    "¥${dish.price}",
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Black,
+                    color = Color(0xFFFFC857)
+                )
             }
             Button(
                 onClick = { onSpec(dish) }, 
                 shape = RoundedCornerShape(16.dp), 
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer)
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF1B1F3B),
+                    contentColor = Color(0xFFFF4FD8)
+                ),
+                border = BorderStroke(1.dp, Color(0x55FFFFFF))
             ) { Text("定制", fontWeight = FontWeight.Bold) }
+            }
         }
     }
 }
@@ -352,6 +487,13 @@ fun DishCard(dish: Dish, onClick: (Dish) -> Unit, onSpec: (Dish) -> Unit) {
 @Composable
 fun CartBar(items: List<OrderItem>, onOrder: () -> Unit, onRemove: (OrderItem) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
+    val cartGlow = Brush.horizontalGradient(
+        listOf(
+            Color(0xFF2C3E50).copy(alpha = 0.7f),
+            Color(0xFF4B79A1).copy(alpha = 0.7f),
+            Color(0xFF8E54E9).copy(alpha = 0.7f)
+        )
+    )
     
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         if (expanded && items.isNotEmpty()) {
@@ -360,9 +502,18 @@ fun CartBar(items: List<OrderItem>, onOrder: () -> Unit, onRemove: (OrderItem) -
                 shape = RoundedCornerShape(32.dp), 
                 elevation = CardDefaults.cardElevation(20.dp)
             ) {
-                Column(Modifier.padding(20.dp)) {
+                Column(
+                    Modifier
+                        .background(cartGlow)
+                        .padding(20.dp)
+                ) {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text("今日待点 (${items.size})", fontWeight = FontWeight.Black, fontSize = 18.sp, color = MaterialTheme.colorScheme.primary)
+                        Text(
+                            "今日待点 (${items.size})",
+                            fontWeight = FontWeight.Black,
+                            fontSize = 18.sp,
+                            color = Color(0xFFFFC857)
+                        )
                         IconButton(onClick = { expanded = false }) { Icon(Icons.Default.Close, null) }
                     }
                     HorizontalDivider(Modifier.padding(vertical = 12.dp))
