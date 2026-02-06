@@ -38,7 +38,6 @@ import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.Shadow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -309,7 +308,7 @@ fun PrivateDishApp() {
                     viewingOrder = newOrder
                 }, { currentCart.remove(it) })
             }
-            
+
             FloatingActionButton(
                 onClick = { isHistoryView = true },
                 modifier = Modifier.align(Alignment.BottomEnd).padding(24.dp).shadow(12.dp, CircleShape),
@@ -442,45 +441,45 @@ fun DishCard(dish: Dish, onClick: (Dish) -> Unit, onSpec: (Dish) -> Unit) {
                 .padding(1.dp)
         ) {
             Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Image(
-                painter = rememberAsyncImagePainter(dish.imageUri ?: Icons.Default.RestaurantMenu),
-                contentDescription = null,
-                modifier = Modifier.size(95.dp).clip(RoundedCornerShape(20.dp)),
-                contentScale = ContentScale.Crop
-            )
-            Spacer(Modifier.width(16.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    dish.name,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                Image(
+                    painter = rememberAsyncImagePainter(dish.imageUri ?: Icons.Default.RestaurantMenu),
+                    contentDescription = null,
+                    modifier = Modifier.size(95.dp).clip(RoundedCornerShape(20.dp)),
+                    contentScale = ContentScale.Crop
                 )
-                if (!dish.mainIngredients.isNullOrBlank()) {
+                Spacer(Modifier.width(16.dp))
+                Column(Modifier.weight(1f)) {
                     Text(
-                        dish.mainIngredients,
-                        fontSize = 12.sp,
-                        color = Color.White.copy(alpha = 0.65f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        dish.name,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    if (!dish.mainIngredients.isNullOrBlank()) {
+                        Text(
+                            dish.mainIngredients,
+                            fontSize = 12.sp,
+                            color = Color.White.copy(alpha = 0.65f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Text(
+                        "¥${dish.price}",
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Black,
+                        color = Color(0xFFFFC857)
                     )
                 }
-                Text(
-                    "¥${dish.price}",
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Black,
-                    color = Color(0xFFFFC857)
-                )
-            }
-            Button(
-                onClick = { onSpec(dish) }, 
-                shape = RoundedCornerShape(16.dp), 
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF1B1F3B),
-                    contentColor = Color(0xFFFF4FD8)
-                ),
-                border = BorderStroke(1.dp, Color(0x55FFFFFF))
-            ) { Text("定制", fontWeight = FontWeight.Bold) }
+                Button(
+                    onClick = { onSpec(dish) },
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF1B1F3B),
+                        contentColor = Color(0xFFFF4FD8)
+                    ),
+                    border = BorderStroke(1.dp, Color(0x55FFFFFF))
+                ) { Text("定制", fontWeight = FontWeight.Bold) }
             }
         }
     }
@@ -496,12 +495,12 @@ fun CartBar(items: List<OrderItem>, onOrder: () -> Unit, onRemove: (OrderItem) -
             Color(0xFF8E54E9).copy(alpha = 0.7f)
         )
     )
-    
+
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         if (expanded && items.isNotEmpty()) {
             Card(
-                modifier = Modifier.width(360.dp).padding(bottom = 12.dp).animateContentSize(), 
-                shape = RoundedCornerShape(32.dp), 
+                modifier = Modifier.width(360.dp).padding(bottom = 12.dp).animateContentSize(),
+                shape = RoundedCornerShape(32.dp),
                 elevation = CardDefaults.cardElevation(20.dp)
             ) {
                 Column(
@@ -538,8 +537,8 @@ fun CartBar(items: List<OrderItem>, onOrder: () -> Unit, onRemove: (OrderItem) -
                             }
                         }
                     }
-                    Button(onClick = onOrder, modifier = Modifier.fillMaxWidth().height(54.dp).padding(top = 12.dp), shape = RoundedCornerShape(16.dp)) { 
-                        Text("确认并下单", fontWeight = FontWeight.Bold, fontSize = 16.sp) 
+                    Button(onClick = onOrder, modifier = Modifier.fillMaxWidth().height(54.dp).padding(top = 12.dp), shape = RoundedCornerShape(16.dp)) {
+                        Text("确认并下单", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     }
                 }
             }
@@ -584,10 +583,10 @@ fun AddDishScreen(editing: Dish?, cats: List<String>, onBack: () -> Unit, onSave
             imgUri = it.toString()
         }
     }
-    
+
     // 核心修改：步骤管理
     var steps by remember { mutableStateOf(editing?.steps.orEmpty().ifEmpty { listOf("") }) }
-    
+
     Scaffold(
         containerColor = Color.Transparent,
         topBar = {
@@ -599,7 +598,7 @@ fun AddDishScreen(editing: Dish?, cats: List<String>, onBack: () -> Unit, onSave
         },
         // 修复：将保存按钮固定在底部
         bottomBar = {
-             Button(
+            Button(
                 onClick = {
                     if (name.isNotBlank() && price.isNotBlank()) {
                         onSave(Dish(
@@ -648,19 +647,19 @@ fun AddDishScreen(editing: Dish?, cats: List<String>, onBack: () -> Unit, onSave
 
             OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("菜名") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp))
             OutlinedTextField(value = price, onValueChange = { price = it }, label = { Text("估价 (¥)") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp))
-            
+
             Text("所属分类", fontWeight = FontWeight.Bold, color = Color(0xFFD86AAE))
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(cats) { c ->
                     FilterChip(selected = cat == c, onClick = { cat = c }, label = { Text(c) }, shape = CircleShape)
                 }
             }
-            
+
             OutlinedTextField(value = ingredients, onValueChange = { ingredients = it }, label = { Text("核心食材") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp))
             OutlinedTextField(value = remark, onValueChange = { remark = it }, label = { Text("独门秘籍/备注") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp))
-            
+
             Text("烹饪秘籍 (每条一步)", fontWeight = FontWeight.Bold, color = Color(0xFFD86AAE))
-            
+
             // 步骤列表管理区域
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 // 使用 animateContentSize 确保动态增删时的动画平滑
@@ -683,7 +682,7 @@ fun AddDishScreen(editing: Dish?, cats: List<String>, onBack: () -> Unit, onSave
                         }
                     }
                 }
-                
+
                 Button(
                     onClick = { steps = steps + "" },
                     modifier = Modifier.align(Alignment.Start),
@@ -708,8 +707,8 @@ fun HistoryScreen(orders: List<Order>, onBack: () -> Unit, onOrderClick: (Order)
         else LazyColumn(modifier = Modifier.padding(p).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             items(orders) { o ->
                 Card(
-                    onClick = { onOrderClick(o) }, 
-                    shape = RoundedCornerShape(24.dp), 
+                    onClick = { onOrderClick(o) },
+                    shape = RoundedCornerShape(24.dp),
                     modifier = Modifier.fillMaxWidth().shadow(4.dp, RoundedCornerShape(24.dp)),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                 ) {
@@ -727,8 +726,8 @@ fun HistoryScreen(orders: List<Order>, onBack: () -> Unit, onOrderClick: (Order)
                             }
                         }
                         // 删除按钮 position微调
-                        IconButton(onClick = { onDeleteOrder(o) }, modifier = Modifier.align(Alignment.TopEnd).padding(4.dp)) { 
-                            Icon(Icons.Default.Delete, null, tint = Color.Red.copy(alpha = 0.4f), modifier = Modifier.size(22.dp)) 
+                        IconButton(onClick = { onDeleteOrder(o) }, modifier = Modifier.align(Alignment.TopEnd).padding(4.dp)) {
+                            Icon(Icons.Default.Delete, null, tint = Color.Red.copy(alpha = 0.4f), modifier = Modifier.size(22.dp))
                         }
                     }
                 }
@@ -833,22 +832,22 @@ fun ReviewDialog(
                     modifier = Modifier.fillMaxWidth().height(120.dp),
                     shape = RoundedCornerShape(16.dp)
                 )
-                
+
                 Text("上传作品集", fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.align(Alignment.Start))
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                     item {
                         Box(
                             Modifier.size(100.dp).border(1.dp, Color.LightGray, RoundedCornerShape(16.dp)).clickable {
                                 multiPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                            }, 
+                            },
                             contentAlignment = Alignment.Center
                         ) { Icon(Icons.Default.AddPhotoAlternate, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp)) }
                     }
                     items(images) { img ->
                         Box {
                             Image(
-                                painter = rememberAsyncImagePainter(img), 
-                                contentDescription = null, 
+                                painter = rememberAsyncImagePainter(img),
+                                contentDescription = null,
                                 modifier = Modifier.size(100.dp).clip(RoundedCornerShape(16.dp)),
                                 contentScale = ContentScale.Crop
                             )
@@ -992,7 +991,7 @@ fun DishDetailScreen(dish: Dish, onBack: () -> Unit, onEdit: (Dish) -> Unit, onD
             }
             Text("备注: ${dish.remark}", modifier = Modifier.padding(vertical = 8.dp), fontSize = 16.sp)
             Text("首次入谱: ${dish.firstMakeDate}", fontSize = 12.sp, color = Color.Gray)
-            
+
             HorizontalDivider(Modifier.padding(vertical = 24.dp))
             Text("烹饪秘籍", fontWeight = FontWeight.Black, fontSize = 24.sp)
             dish.steps.forEachIndexed { i, s ->
