@@ -32,11 +32,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.shadow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -326,7 +326,7 @@ fun MainScreen(
 ) {
     val filtered = dishes.filter { (it.category == selected || selected.isEmpty()) && it.name.contains(query, true) }
     var searchVisible by remember { mutableStateOf(false) }
-    val neonTextShadow = shadow(
+    val neonTextShadow = Shadow(
         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
         blurRadius = 16f
     )
@@ -697,7 +697,7 @@ fun HistoryScreen(orders: List<Order>, onBack: () -> Unit, onOrderClick: (Order)
                                 Row(Modifier.padding(top = 12.dp)) { repeat(5) { i -> Icon(Icons.Default.Star, null, tint = if(i < o.rating) Color(0xFFFFC107) else Color.LightGray, modifier = Modifier.size(20.dp)) } }
                             }
                         }
-                        // 删除按钮位置微调
+                        // 删除按钮 position微调
                         IconButton(onClick = { onDeleteOrder(o) }, modifier = Modifier.align(Alignment.TopEnd).padding(4.dp)) { 
                             Icon(Icons.Default.Delete, null, tint = Color.Red.copy(alpha = 0.4f), modifier = Modifier.size(22.dp)) 
                         }
