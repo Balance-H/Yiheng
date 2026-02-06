@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Dark theme overrides (system bars, window background, etc.) -->
+    <style name="Theme.Yiheng" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/warm_primary_light</item>
+        <item name="colorSecondary">@color/warm_secondary_light</item>
+        <item name="colorTertiary">@color/warm_tertiary_light</item>
+
+        <item name="android:statusBarColor">@color/warm_surface_dark</item>
+        <item name="android:navigationBarColor">@color/warm_surface_dark</item>
+
+        <item name="android:windowBackground">@color/warm_background_dark</item>
+    </style>
+
+</resources>

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- App theme used by Activities (for system bars, window background, etc.) -->
+    <style name="Theme.Yiheng" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/warm_primary</item>
+        <item name="colorSecondary">@color/warm_secondary</item>
+        <item name="colorTertiary">@color/warm_tertiary</item>
+
+        <item name="android:statusBarColor">@color/warm_primary</item>
+        <item name="android:navigationBarColor">@color/warm_surface</item>
+
+        <!-- Light window background to match the warmer palette -->
+        <item name="android:windowBackground">@color/warm_background</item>
+    </style>
+
+</resources>
