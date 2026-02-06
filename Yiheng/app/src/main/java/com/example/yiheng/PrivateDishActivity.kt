@@ -3,6 +3,7 @@
 package com.example.yiheng
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -11,7 +12,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -30,9 +33,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.Shadow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -198,6 +203,44 @@ fun PrivateDishApp() {
     var orderHistory by remember { mutableStateOf(DishStore.loadOrders(context)) }
     val currentCart = remember { mutableStateListOf<OrderItem>() }
 
+    val infiniteTransition = rememberInfiniteTransition(label = "gradient")
+    val shift by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(12000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "shift"
+    )
+    val glowA by infiniteTransition.animateColor(
+        initialValue = Color(0xFFB7A7FF),
+        targetValue = Color(0xFFF7A6D8),
+        animationSpec = infiniteRepeatable(
+            animation = tween(9000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "glowA"
+    )
+    val glowB by infiniteTransition.animateColor(
+        initialValue = Color(0xFFA6D9FF),
+        targetValue = Color(0xFFFCE1A3),
+        animationSpec = infiniteRepeatable(
+            animation = tween(11000, easing = LinearOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "glowB"
+    )
+    val glowC by infiniteTransition.animateColor(
+        initialValue = Color(0xFFC9F7C9),
+        targetValue = Color(0xFFBCEBFF),
+        animationSpec = infiniteRepeatable(
+            animation = tween(10000, easing = FastOutLinearInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "glowC"
+    )
+
     var editingDish: Dish? by remember { mutableStateOf(null) }
     var isAdding by remember { mutableStateOf(false) }
     var viewingDish by remember { mutableStateOf<Dish?>(null) }
@@ -216,9 +259,17 @@ fun PrivateDishApp() {
         SpecDialog(specDish!!, { specDish = null }, { currentCart.add(it); specDish = null })
     }
 
-    Box(Modifier.fillMaxSize().background(
-        Brush.verticalGradient(listOf(MaterialTheme.colorScheme.surface, MaterialTheme.colorScheme.surfaceVariant))
-    )) {
+    val backgroundBrush = Brush.linearGradient(
+        colors = listOf(glowA, glowB, glowC, glowA),
+        start = androidx.compose.ui.geometry.Offset.Zero,
+        end = androidx.compose.ui.geometry.Offset(1200f * shift + 400f, 2000f * (1f - shift) + 400f),
+        tileMode = TileMode.Mirror
+    )
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(backgroundBrush)
+    ) {
         // 使用 AnimatedContent 增加页面切换动感
         AnimatedContent(
             targetState = when {
@@ -261,8 +312,8 @@ fun PrivateDishApp() {
             FloatingActionButton(
                 onClick = { isHistoryView = true },
                 modifier = Modifier.align(Alignment.BottomEnd).padding(24.dp).shadow(12.dp, CircleShape),
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.primary
+                containerColor = Color(0xFF1B1F3B),
+                contentColor = Color(0xFF36D1FF)
             ) { Icon(Icons.Default.History, "历程") }
         }
     }
@@ -276,12 +327,34 @@ fun MainScreen(
 ) {
     val filtered = dishes.filter { (it.category == selected || selected.isEmpty()) && it.name.contains(query, true) }
     var searchVisible by remember { mutableStateOf(false) }
+    val neonTextShadow = Shadow(
+        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+        blurRadius = 16f
+    )
 
     Scaffold(
         topBar = {
-            Column(Modifier.background(MaterialTheme.colorScheme.surface.copy(alpha = 0.9f))) {
+            Column(
+                Modifier
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                            )
+                        )
+                    )
+            ) {
                 TopAppBar(
-                    title = { Text("吾家私房菜", fontWeight = FontWeight.Black, fontSize = 26.sp) },
+                    title = {
+                        Text(
+                            "吾家私房菜",
+                            fontWeight = FontWeight.Black,
+                            fontSize = 26.sp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            style = MaterialTheme.typography.titleLarge.copy(shadow = neonTextShadow)
+                        )
+                    },
                     actions = {
                         IconButton(onClick = { searchVisible = !searchVisible }) { Icon(Icons.Default.Search, null) }
                         IconButton(onClick = onAdd) { Icon(Icons.Default.AddCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(36.dp)) }
@@ -301,11 +374,37 @@ fun MainScreen(
         containerColor = Color.Transparent
     ) { p ->
         Row(Modifier.padding(p).fillMaxSize()) {
-            Column(Modifier.width(96.dp).fillMaxHeight().background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)).verticalScroll(rememberScrollState())) {
+            Column(
+                Modifier
+                    .width(96.dp)
+                    .fillMaxHeight()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
+                            )
+                        )
+                    )
+                    .verticalScroll(rememberScrollState())
+            ) {
                 cats.forEach { c ->
                     val isSel = c == selected
-                    Box(Modifier.fillMaxWidth().clickable { onCat(c) }.background(if (isSel) MaterialTheme.colorScheme.surface else Color.Transparent).padding(vertical = 24.dp), contentAlignment = Alignment.Center) {
-                        Text(c, fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal, color = if (isSel) MaterialTheme.colorScheme.primary else Color.Gray)
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { onCat(c) }
+                            .background(
+                                if (isSel) MaterialTheme.colorScheme.surface.copy(alpha = 0.8f) else Color.Transparent
+                            )
+                            .padding(vertical = 24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            c,
+                            fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
+                            color = if (isSel) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.75f)
+                        )
                     }
                 }
                 IconButton(onClick = onManage, modifier = Modifier.align(Alignment.CenterHorizontally).padding(vertical = 16.dp)) { Icon(Icons.Default.Settings, null, tint = Color.LightGray) }
@@ -321,13 +420,27 @@ fun MainScreen(
 
 @Composable
 fun DishCard(dish: Dish, onClick: (Dish) -> Unit, onSpec: (Dish) -> Unit) {
+    val cardGlow = Brush.linearGradient(
+        listOf(
+            Color(0x33F7A6D8),
+            Color(0x33A6D9FF),
+            Color(0x33C9F7C9)
+        )
+    )
     Card(
         onClick = { onClick(dish) },
         shape = RoundedCornerShape(28.dp),
-        modifier = Modifier.fillMaxWidth().shadow(8.dp, RoundedCornerShape(28.dp)),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(12.dp, RoundedCornerShape(28.dp)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
     ) {
-        Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .background(cardGlow)
+                .padding(1.dp)
+        ) {
+            Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             Image(
                 painter = rememberAsyncImagePainter(dish.imageUri ?: Icons.Default.RestaurantMenu),
                 contentDescription = null,
@@ -336,15 +449,38 @@ fun DishCard(dish: Dish, onClick: (Dish) -> Unit, onSpec: (Dish) -> Unit) {
             )
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
-                Text(dish.name, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                if (!dish.mainIngredients.isNullOrBlank()) Text(dish.mainIngredients, fontSize = 12.sp, color = Color.Gray, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("¥${dish.price}", fontSize = 22.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
+                Text(
+                    dish.name,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                if (!dish.mainIngredients.isNullOrBlank()) {
+                    Text(
+                        dish.mainIngredients,
+                        fontSize = 12.sp,
+                        color = Color.White.copy(alpha = 0.65f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Text(
+                    "¥${dish.price}",
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Black,
+                    color = Color(0xFFE9C675)
+                )
             }
             Button(
                 onClick = { onSpec(dish) }, 
                 shape = RoundedCornerShape(16.dp), 
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer)
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF1B1F3B),
+                    contentColor = Color(0xFFFF4FD8)
+                ),
+                border = BorderStroke(1.dp, Color(0x55FFFFFF))
             ) { Text("定制", fontWeight = FontWeight.Bold) }
+            }
         }
     }
 }
@@ -352,6 +488,13 @@ fun DishCard(dish: Dish, onClick: (Dish) -> Unit, onSpec: (Dish) -> Unit) {
 @Composable
 fun CartBar(items: List<OrderItem>, onOrder: () -> Unit, onRemove: (OrderItem) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
+    val cartGlow = Brush.horizontalGradient(
+        listOf(
+            Color(0xFF2C3E50).copy(alpha = 0.7f),
+            Color(0xFF4B79A1).copy(alpha = 0.7f),
+            Color(0xFF8E54E9).copy(alpha = 0.7f)
+        )
+    )
     
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         if (expanded && items.isNotEmpty()) {
@@ -360,9 +503,18 @@ fun CartBar(items: List<OrderItem>, onOrder: () -> Unit, onRemove: (OrderItem) -
                 shape = RoundedCornerShape(32.dp), 
                 elevation = CardDefaults.cardElevation(20.dp)
             ) {
-                Column(Modifier.padding(20.dp)) {
+                Column(
+                    Modifier
+                        .background(cartGlow)
+                        .padding(20.dp)
+                ) {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text("今日待点 (${items.size})", fontWeight = FontWeight.Black, fontSize = 18.sp, color = MaterialTheme.colorScheme.primary)
+                        Text(
+                            "今日待点 (${items.size})",
+                            fontWeight = FontWeight.Black,
+                            fontSize = 18.sp,
+                            color = Color(0xFFFFC857)
+                        )
                         IconButton(onClick = { expanded = false }) { Icon(Icons.Default.Close, null) }
                     }
                     HorizontalDivider(Modifier.padding(vertical = 12.dp))
@@ -408,6 +560,7 @@ fun CartBar(items: List<OrderItem>, onOrder: () -> Unit, onRemove: (OrderItem) -
 
 @Composable
 fun AddDishScreen(editing: Dish?, cats: List<String>, onBack: () -> Unit, onSave: (Dish) -> Unit) {
+    val context = LocalContext.current
     var name by remember { mutableStateOf(editing?.name ?: "") }
     var price by remember { mutableStateOf(editing?.price ?: "") }
     var cat by remember { mutableStateOf(editing?.category ?: (cats.firstOrNull() ?: "")) }
@@ -415,16 +568,34 @@ fun AddDishScreen(editing: Dish?, cats: List<String>, onBack: () -> Unit, onSave
     var ingredients by remember { mutableStateOf(editing?.mainIngredients ?: "") }
     var stepsText by remember { mutableStateOf(editing?.steps?.joinToString("\n") ?: "") }
     var imgUri by remember { mutableStateOf(editing?.imageUri ?: "") }
+    val pinkMist = Brush.verticalGradient(
+        listOf(
+            Color(0xFFFFEEF7),
+            Color(0xFFF9D6EA),
+            Color(0xFFF6C3E0)
+        )
+    )
 
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        uri?.let { imgUri = it.toString() }
+        uri?.let {
+            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+            runCatching { context.contentResolver.takePersistableUriPermission(it, flags) }
+            imgUri = it.toString()
+        }
     }
     
     // 核心修改：步骤管理
     var steps by remember { mutableStateOf(editing?.steps.orEmpty().ifEmpty { listOf("") }) }
     
     Scaffold(
-        topBar = { TopAppBar(title = { Text(if(editing==null) "新增珍馐" else "优化菜品", fontWeight = FontWeight.Bold) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } }) },
+        containerColor = Color.Transparent,
+        topBar = {
+            TopAppBar(
+                title = { Text(if (editing == null) "新增珍馐" else "优化菜品", fontWeight = FontWeight.Bold) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFFF8CFE4))
+            )
+        },
         // 修复：将保存按钮固定在底部
         bottomBar = {
              Button(
@@ -440,28 +611,36 @@ fun AddDishScreen(editing: Dish?, cats: List<String>, onBack: () -> Unit, onSave
                     }
                 },
                 modifier = Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 16.dp, vertical = 8.dp),
-                shape = RoundedCornerShape(16.dp)
+                shape = RoundedCornerShape(18.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE79AC3), contentColor = Color.White)
             ) { Text("保存菜谱", fontSize = 18.sp, fontWeight = FontWeight.Bold) }
         }
     ) { p ->
         // 主内容区，现在可以完全滚动
-        Column(Modifier.padding(p).padding(horizontal = 16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Column(
+            Modifier
+                .background(pinkMist)
+                .padding(p)
+                .padding(horizontal = 16.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
             // 图片上传区域
             Box(
-                Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(28.dp)).background(MaterialTheme.colorScheme.surfaceVariant).clickable {
+                Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(28.dp)).background(Color(0xFFFBE6F2)).clickable {
                     photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                 },
                 contentAlignment = Alignment.Center
             ) {
                 if (imgUri.isNotBlank()) {
                     Image(rememberAsyncImagePainter(imgUri), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                    Box(Modifier.fillMaxSize().background(Color.Black.copy(0.3f)), contentAlignment = Alignment.Center) {
+                    Box(Modifier.fillMaxSize().background(Color.Black.copy(0.25f)), contentAlignment = Alignment.Center) {
                         Text("点击更换照片", color = Color.White, fontWeight = FontWeight.Bold)
                     }
                 } else {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Default.AddAPhoto, null, Modifier.size(56.dp), tint = MaterialTheme.colorScheme.primary)
-                        Text("上传本地照片", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
+                        Icon(Icons.Default.AddAPhoto, null, Modifier.size(56.dp), tint = Color(0xFFD86AAE))
+                        Text("上传本地照片", color = Color(0xFFD86AAE), fontWeight = FontWeight.Medium)
                     }
                 }
             }
@@ -469,7 +648,7 @@ fun AddDishScreen(editing: Dish?, cats: List<String>, onBack: () -> Unit, onSave
             OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("菜名") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp))
             OutlinedTextField(value = price, onValueChange = { price = it }, label = { Text("估价 (¥)") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp))
             
-            Text("所属分类", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            Text("所属分类", fontWeight = FontWeight.Bold, color = Color(0xFFD86AAE))
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(cats) { c ->
                     FilterChip(selected = cat == c, onClick = { cat = c }, label = { Text(c) }, shape = CircleShape)
@@ -479,7 +658,7 @@ fun AddDishScreen(editing: Dish?, cats: List<String>, onBack: () -> Unit, onSave
             OutlinedTextField(value = ingredients, onValueChange = { ingredients = it }, label = { Text("核心食材") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp))
             OutlinedTextField(value = remark, onValueChange = { remark = it }, label = { Text("独门秘籍/备注") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp))
             
-            Text("烹饪秘籍 (每条一步)", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            Text("烹饪秘籍 (每条一步)", fontWeight = FontWeight.Bold, color = Color(0xFFD86AAE))
             
             // 步骤列表管理区域
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -508,7 +687,7 @@ fun AddDishScreen(editing: Dish?, cats: List<String>, onBack: () -> Unit, onSave
                     onClick = { steps = steps + "" },
                     modifier = Modifier.align(Alignment.Start),
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.primary)
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF4D1E5), contentColor = Color(0xFFD86AAE))
                 ) {
                     Icon(Icons.Default.Add, null)
                     Spacer(Modifier.width(4.dp))
