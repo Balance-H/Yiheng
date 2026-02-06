@@ -276,8 +276,6 @@ fun PrivateDishApp() {
     var searchQuery by remember { mutableStateOf("") }
     var specDish by remember { mutableStateOf<Dish?>(null) }
     val currentOrderId = viewingOrder?.id
-    var addAnimUri by remember { mutableStateOf<String?>(null) }
-    val addAnimProgress = remember { Animatable(0f) }
 
     BackHandler(enabled = viewingOrder != null || isHistoryView || isManagingCats || isAdding || editingDish != null || viewingDish != null) {
         when {
@@ -312,59 +310,37 @@ fun PrivateDishApp() {
             .fillMaxSize()
             .background(backgroundBrush)
     ) {
-        SharedTransitionLayout {
-            // 使用 AnimatedContent 增加页面切换动感
-            AnimatedContent(
-                targetState = when {
-                    viewingOrder != null -> 0
-                    isHistoryView -> 1
-                    isManagingCats -> 2
-                    isAdding || editingDish != null -> 3
-                    viewingDish != null -> 4
-                    else -> 5
-                },
-                label = "screen_transition"
-            ) { state ->
-                when (state) {
-                    0 -> OrderDetailScreen(viewingOrder!!, { viewingOrder = null }, { img, txt, rate ->
-                        currentOrderId?.let { orderId ->
-                            orderHistory = orderHistory.map { if (it.id == orderId) it.copy(reviewImages = img.filter { it.isNotBlank() }, reviewText = txt, rating = rate, isCompleted = true) else it }
-                        }
-                        viewingOrder = null
-                    }, {
-                        currentOrderId?.let { orderId -> orderHistory = orderHistory.filter { it.id != orderId } }
-                        viewingOrder = null
-                    })
-                    1 -> HistoryScreen(orderHistory, { isHistoryView = false }, { viewingOrder = it }, { orderToDelete -> orderHistory = orderHistory.filter { it.id != orderToDelete.id } })
-                    2 -> CategoryScreen(categoryList, { isManagingCats = false }, { newCats -> categoryList = newCats })
-                    3 -> AddDishScreen(editingDish, categoryList, { isAdding = false; editingDish = null }, { savedDish ->
-                        val editingId = editingDish?.id
-                        dishList = if (editingId != null) dishList.map { d -> if (d.id == editingId) savedDish else d } else dishList + savedDish
-                        isAdding = false; editingDish = null
-                    })
-                    4 -> DishDetailScreen(
-                        viewingDish!!,
-                        { viewingDish = null },
-                        { editingDish = it; viewingDish = null },
-                        { dishList = dishList.filter { d -> d.id != viewingDish!!.id }; viewingDish = null },
-                        this@SharedTransitionLayout,
-                        this
-                    )
-                    5 -> MainScreen(
-                        dishList,
-                        categoryList,
-                        selectedCat,
-                        searchQuery,
-                        { selectedCat = it },
-                        { searchQuery = it },
-                        { isAdding = true },
-                        { isManagingCats = true },
-                        { viewingDish = it },
-                        { specDish = it },
-                        this@SharedTransitionLayout,
-                        this
-                    )
-                }
+        // 使用 AnimatedContent 增加页面切换动感
+        AnimatedContent(
+            targetState = when {
+                viewingOrder != null -> 0
+                isHistoryView -> 1
+                isManagingCats -> 2
+                isAdding || editingDish != null -> 3
+                viewingDish != null -> 4
+                else -> 5
+            },
+            label = "screen_transition"
+        ) { state ->
+            when (state) {
+                0 -> OrderDetailScreen(viewingOrder!!, { viewingOrder = null }, { img, txt, rate ->
+                    currentOrderId?.let { orderId ->
+                        orderHistory = orderHistory.map { if (it.id == orderId) it.copy(reviewImages = img, reviewText = txt, rating = rate, isCompleted = true) else it }
+                    }
+                    viewingOrder = null
+                }, {
+                    currentOrderId?.let { orderId -> orderHistory = orderHistory.filter { it.id != orderId } }
+                    viewingOrder = null
+                })
+                1 -> HistoryScreen(orderHistory, { isHistoryView = false }, { viewingOrder = it }, { orderToDelete -> orderHistory = orderHistory.filter { it.id != orderToDelete.id } })
+                2 -> CategoryScreen(categoryList, { isManagingCats = false }, { newCats -> categoryList = newCats })
+                3 -> AddDishScreen(editingDish, categoryList, { isAdding = false; editingDish = null }, { savedDish ->
+                    val editingId = editingDish?.id
+                    dishList = if (editingId != null) dishList.map { d -> if (d.id == editingId) savedDish else d } else dishList + savedDish
+                    isAdding = false; editingDish = null
+                })
+                4 -> DishDetailScreen(viewingDish!!, { viewingDish = null }, { editingDish = it; viewingDish = null }, { dishList = dishList.filter { d -> d.id != viewingDish!!.id }; viewingDish = null })
+                5 -> MainScreen(dishList, categoryList, selectedCat, searchQuery, { selectedCat = it }, { searchQuery = it }, { isAdding = true }, { isManagingCats = true }, { viewingDish = it }, { specDish = it })
             }
         }
 
@@ -1196,7 +1172,7 @@ fun SpecDialog(dish: Dish, onDismiss: () -> Unit, onConfirm: (OrderItem) -> Unit
         },
         confirmButton = {
             Button(
-                onClick = { onConfirm(OrderItem(dish.id, dish.name, dish.imageUris.firstOrNull(), parsePrice(dish.price), oil, dietaries.toList(), spicy, dish.steps)) },
+                onClick = { onConfirm(OrderItem(dish.id, dish.name, dish.imageUri, parsePrice(dish.price), oil, dietaries.toList(), spicy, dish.steps)) },
                 shape = RoundedCornerShape(16.dp)
             ) { Text("确认选择") }
         },
